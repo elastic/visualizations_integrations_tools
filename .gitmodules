@@ -1,0 +1,8 @@
+[submodule "integrations"]
+	path = integrations
+	url = https://github.com/elastic/integrations
+	branch = main
+[submodule "beats"]
+	path = beats
+	url = https://github.com/elastic/beats
+	branch = main

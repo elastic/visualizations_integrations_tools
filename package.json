@@ -1,0 +1,10 @@
+{
+  "name": "legacy_vis_analyzer",
+  "version": "1.0.0",
+  "main": "index.js",
+  "author": "Joe Reuter <johannes.reuter@elastic.co>",
+  "private": true,
+  "dependencies": {
+    "@elastic/elasticsearch": "^8.1.0"
+  }
+}
