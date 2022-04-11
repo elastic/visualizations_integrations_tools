@@ -24,3 +24,8 @@ The inliner takes all "by reference" visualizations in a given directory, uses t
 * Review changes in submodule repo
   * This review should include loading the dashboard into an instance with data to make sure everything is displayed properly
 * If everything works fine, create PR
+
+### Notes
+
+* Does not inline maps or lens panels yet
+* Untested, might still be buggy
