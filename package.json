@@ -5,6 +5,7 @@
   "author": "Joe Reuter <johannes.reuter@elastic.co>",
   "private": true,
   "dependencies": {
-    "@elastic/elasticsearch": "^8.1.0"
+    "@elastic/elasticsearch": "^8.1.0",
+    "axios": "^0.26.1"
   }
 }
