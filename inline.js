@@ -29,10 +29,28 @@ function cleanupAttributes(attributes) {
   return attributes;
 }
 
+function rehydrateAttributes(attributes) {
+  if (
+    attributes.kibanaSavedObjectMeta?.searchSourceJSON &&
+    typeof attributes.kibanaSavedObjectMeta.searchSourceJSON === "string"
+  ) {
+    attributes.kibanaSavedObjectMeta.searchSourceJSON = JSON.parse(
+      attributes.kibanaSavedObjectMeta.searchSourceJSON
+    );
+  }
+  if (attributes.panelsJSON && typeof attributes.panelsJSON === "string") {
+    attributes.panelsJSON = JSON.parse(attributes.panelsJSON);
+  }
+  if (attributes.optionsJSON && typeof attributes.optionsJSON === "string") {
+    attributes.optionsJSON = JSON.parse(attributes.optionsJSON);
+  }
+  return attributes;
+}
+
 (async function () {
   const visPath = `${folderPath}/visualization`;
   const exists = fs.existsSync(visPath);
-  if (!exists) throw new Error('No visualization folder found');
+  if (!exists) throw new Error("No visualization folder found");
   const visualizationPaths = fs.readdirSync(visPath);
   const visualizations = visualizationPaths.map((vis) =>
     JSON.parse(fs.readFileSync(`${visPath}/${vis}`, { encoding: "utf8" }))
@@ -72,11 +90,13 @@ function cleanupAttributes(attributes) {
     if (!s.outcome === "exactMatch") throw new Error();
     migratedVisualizations.set(s.saved_object.id, s.saved_object);
   });
-  console.log(`Prepared ${response2.data.resolved_objects.length} visualizations to be inlined`);
+  console.log(
+    `Prepared ${response2.data.resolved_objects.length} visualizations to be inlined`
+  );
 
   const dashboardPath = `${folderPath}/dashboard`;
   const dExists = fs.existsSync(dashboardPath);
-  if (!dExists) throw new Error('no dashboard folder found');
+  if (!dExists) throw new Error("no dashboard folder found");
   const dashboardPaths = fs.readdirSync(dashboardPath);
   const dashboards = dashboardPaths.map((d) =>
     JSON.parse(fs.readFileSync(`${dashboardPath}/${d}`, { encoding: "utf8" }))
@@ -110,49 +130,87 @@ function cleanupAttributes(attributes) {
       },
     }
   );
-  let counter = 0;
-  const inlinedDashboards = response4.data.resolved_objects.map(({ saved_object: d }) => {
-    console.log(`Processing dashboard ${d.attributes.title}`);
-    const attributes = d.attributes;
-    const references = d.references;
-    const panels = JSON.parse(attributes.panelsJSON);
-    panels.forEach(p => {
-      const ref = references.find(r => r.name === `${p.panelIndex}:panel_${p.panelIndex}`) || references.find(r => r.name === `${p.panelRefName}`);
-      if (ref && migratedVisualizations.has(ref.id)) {
-        const visToInline = migratedVisualizations.get(ref.id);
-        const visState = JSON.parse(visToInline.attributes.visState);
-        p.version = visToInline.migrationVersion.visualization;
-        p.embeddableConfig.savedVis = {
-          title: visToInline.attributes.title,
-          description: visToInline.attributes.description,
-          uiState: visToInline.attributes.uiStateJSON,
-          params: visState.params,
-          type: visState.type,
-          data: {
-            aggs: !visState.aggs ? undefined : visState.aggs,
-            searchSource: JSON.parse(visToInline.attributes.kibanaSavedObjectMeta.searchSourceJSON)
-          }
-        };
-        references.splice(references.indexOf(ref), 1);
-        references.push(...visToInline.references.map(r => ({ type: r.type, name: `${p.panelIndex}:${r.name}`, id: r.id })))
-        console.log(`Inlined a vis, pushed ${visToInline.references.length} inner references`);
-        counter++;
-      } else {
-        if (!ref) {
-          if (p.type === undefined) {
-            console.log(d.references)
-            throw new Error('Could not match reference');
-          }
-          console.log(`Leaving panel of type ${p.type}, seems to be inlined already`);
+  let counter = new Set();
+  const inlinedDashboards = response4.data.resolved_objects.map(
+    ({ saved_object: d }) => {
+      console.log(`Processing dashboard ${d.attributes.title}`);
+      const attributes = d.attributes;
+      const references = d.references;
+      const panels = JSON.parse(attributes.panelsJSON);
+      panels.forEach((p) => {
+        const ref =
+          references.find(
+            (r) => r.name === `${p.panelIndex}:panel_${p.panelIndex}`
+          ) || references.find((r) => r.name === `${p.panelRefName}`);
+        if (ref && migratedVisualizations.has(ref.id)) {
+          const visToInline = migratedVisualizations.get(ref.id);
+          const visState = JSON.parse(visToInline.attributes.visState);
+          p.version = visToInline.migrationVersion.visualization;
+          p.embeddableConfig.savedVis = {
+            title: visToInline.attributes.title,
+            description: visToInline.attributes.description,
+            uiState: visToInline.attributes.uiStateJSON,
+            params: visState.params,
+            type: visState.type,
+            data: {
+              aggs: !visState.aggs ? undefined : visState.aggs,
+              searchSource: JSON.parse(
+                visToInline.attributes.kibanaSavedObjectMeta.searchSourceJSON
+              ),
+            },
+          };
+          references.splice(references.indexOf(ref), 1);
+          references.push(
+            ...visToInline.references.map((r) => ({
+              type: r.type,
+              name: `${p.panelIndex}:${r.name}`,
+              id: r.id,
+            }))
+          );
+          console.log(
+            `Inlined a vis, pushed ${visToInline.references.length} inner references`
+          );
+          counter.add(ref.id);
         } else {
-          console.log(`Leaving panel of type ${p.type}`);
+          if (!ref) {
+            if (p.type === undefined) {
+              console.log(d.references);
+              throw new Error("Could not match reference");
+            }
+            console.log(
+              `Leaving panel of type ${p.type}, seems to be inlined already`
+            );
+          } else {
+            console.log(`Leaving panel of type ${p.type}`);
+          }
         }
+      });
+      attributes.panelsJSON = JSON.stringify(panels);
+      return d;
+    }
+  );
+  console.log(`Inlined ${counter.size} visualizations`);
+  if (counter.size !== response2.data.resolved_objects.length) {
+    for (v in migratedVisualizations.values()) {
+      if (!counter.has(v.id)) {
+        console.log(`Did not inline ${v.id} anywhere`);
       }
-    })
-    attributes.panelsJSON = JSON.stringify(panels);
-    return d;
+    }
+    throw new Error("Some visualizations did not get inlined!");
+  }
+  console.log("Removing visualization folder");
+  fs.rmSync(visPath, { force: true, recursive: true });
+  console.log("Writing back dashboards");
+  inlinedDashboards.forEach((d) => {
+    fs.writeFileSync(
+      `${dashboardPath}/${d.id}.json`,
+      JSON.stringify(
+        { ...d, attributes: rehydrateAttributes(d.attributes) },
+        null,
+        2
+      )
+    );
   });
-  console.log(`Inlined ${counter} visualizations`);
   if (fs.existsSync("./result.json")) {
     fs.rmSync("./result.json");
   }
