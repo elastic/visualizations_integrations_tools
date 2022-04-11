@@ -1,4 +1,6 @@
 const crypto = require("crypto");
+const execSync = require("child_process").execSync;
+const path = require("path");
 
 const fs = require("fs");
 const { Client } = require("@elastic/elasticsearch");
@@ -48,6 +50,21 @@ function cleanupDoc(doc) {
   return doc;
 }
 
+function getCommitData(file) {
+  const [base, ...localPath] = file.split(path.sep).slice(1);
+  const stdout = execSync(
+    `cd ${base} && git log "${[".", ...localPath].join(path.sep)}"`, { encoding: 'utf8'}
+  );
+  const [, hash, author, date] = /commit (\w+)\nAuthor: (.*)\nDate: (.*)/.exec(
+    stdout
+  );
+  return {
+    hash,
+    author: author.trim(),
+    date: new Date(date.trim().toString()),
+  };
+}
+
 function collectVisualizationFolder(app, path, source, dashboards, folderName) {
   const visPath = `${path}/${folderName}`;
   const exists = fs.existsSync(visPath);
@@ -59,8 +76,9 @@ function collectVisualizationFolder(app, path, source, dashboards, folderName) {
         fs.readFileSync(`${visPath}/${vis}`, { encoding: "utf8" })
       ),
       path: `${visPath}/${vis}`,
+      commit: getCommitData(`${visPath}/${vis}`),
     }))
-    .map(({ doc, path }) => ({
+    .map(({ doc, path, commit }) => ({
       doc: cleanupDoc(doc),
       soType: folderName,
       app,
@@ -68,6 +86,7 @@ function collectVisualizationFolder(app, path, source, dashboards, folderName) {
       link: "by_reference",
       dashboard: dashboards.get(doc.id),
       path,
+      commit,
     }));
 }
 
@@ -83,6 +102,7 @@ function collectDashboardFolder(app, path, source) {
     const dashboard = JSON.parse(
       fs.readFileSync(`${dashboardPath}/${d}`, { encoding: "utf8" })
     );
+    const commit = getCommitData(`${dashboardPath}/${d}`);
     dashboard.references.forEach((r) => {
       dashboardMap.set(r.id, dashboard.attributes.title);
     });
@@ -105,6 +125,7 @@ function collectDashboardFolder(app, path, source) {
           link: "by_value",
           dashboard: dashboard.attributes.title,
           path: `${dashboardPath}/${d}`,
+          commit,
         });
       });
   });
@@ -245,6 +266,19 @@ function collectBeats() {
         },
         path: {
           type: "keyword",
+        },
+        commit: {
+          properties: {
+            hash: {
+              type: "keyword",
+            },
+            author: {
+              type: "keyword",
+            },
+            date: {
+              type: "date",
+            },
+          },
         },
       },
     },
