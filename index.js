@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const execSync = require("child_process").execSync;
 const path = require("path");
+const YAML = require("yaml");
 
 const fs = require("fs");
 const { Client } = require("@elastic/elasticsearch");
@@ -53,7 +54,8 @@ function cleanupDoc(doc) {
 function getCommitData(file) {
   const [base, ...localPath] = file.split(path.sep).slice(1);
   const stdout = execSync(
-    `cd ${base} && git log "${[".", ...localPath].join(path.sep)}"`, { encoding: 'utf8'}
+    `cd ${base} && git log "${[".", ...localPath].join(path.sep)}"`,
+    { encoding: "utf8" }
   );
   const [, hash, author, date] = /commit (\w+)\nAuthor: (.*)\nDate: (.*)/.exec(
     stdout
@@ -145,6 +147,11 @@ function collectIntegrations() {
       `./integrations/packages/${package}/kibana`,
       "integration"
     );
+    const manifest = YAML.parse(
+      fs.readFileSync(`./integrations/packages/${package}/manifest.yml`, {
+        encoding: "utf8",
+      })
+    );
     visualizations.push(
       ...collectVisualizationFolder(
         package,
@@ -182,7 +189,7 @@ function collectIntegrations() {
       )
     );
     console.log(`Collected ${visualizations.length} vis in ${package}`);
-    allVis.push(...visualizations);
+    allVis.push(...visualizations.map((v) => ({ ...v, manifest })));
   });
   return allVis;
 }
@@ -248,6 +255,9 @@ function collectBeats() {
         doc: {
           type: "flattened",
           depth_limit: 50,
+        },
+        manifest: {
+          type: "flattened",
         },
         soType: {
           type: "keyword",

@@ -26,6 +26,15 @@ function cleanupAttributes(attributes) {
   if (attributes.optionsJSON && typeof attributes.optionsJSON !== "string") {
     attributes.optionsJSON = JSON.stringify(attributes.optionsJSON);
   }
+  if (attributes.mapStateJSON && typeof attributes.mapStateJSON !== "string") {
+    attributes.mapStateJSON = JSON.stringify(attributes.mapStateJSON);
+  }
+  if (
+    attributes.layerListJSON &&
+    typeof attributes.layerListJSON !== "string"
+  ) {
+    attributes.layerListJSON = JSON.stringify(attributes.layerListJSON);
+  }
   return attributes;
 }
 
@@ -48,51 +57,9 @@ function rehydrateAttributes(attributes) {
 }
 
 (async function () {
-  const visPath = `${folderPath}/visualization`;
-  const exists = fs.existsSync(visPath);
-  if (!exists) throw new Error("No visualization folder found");
-  const visualizationPaths = fs.readdirSync(visPath);
-  const visualizations = visualizationPaths.map((vis) =>
-    JSON.parse(fs.readFileSync(`${visPath}/${vis}`, { encoding: "utf8" }))
-  );
-
-  const response = await axios.post(
-    `${baseUrl}/api/saved_objects/_bulk_create?overwrite=true`,
-    visualizations.map(
-      ({ type, id, attributes, references, migrationVersion }) => ({
-        type,
-        id,
-        attributes: cleanupAttributes(attributes),
-        references,
-        migrationVersion,
-      })
-    ),
-    {
-      headers: {
-        "kbn-xsrf": "abc",
-      },
-    }
-  );
-  if (response.data.saved_objects.some((s) => s.error)) {
-    throw new Error("error loading visualizations");
-  }
-  const response2 = await axios.post(
-    `${baseUrl}/api/saved_objects/_bulk_resolve`,
-    visualizations.map((v) => ({ type: "visualization", id: v.id })),
-    {
-      headers: {
-        "kbn-xsrf": "abc",
-      },
-    }
-  );
-  const migratedVisualizations = new Map();
-  response2.data.resolved_objects.forEach((s) => {
-    if (!s.outcome === "exactMatch") throw new Error();
-    migratedVisualizations.set(s.saved_object.id, s.saved_object);
-  });
-  console.log(
-    `Prepared ${response2.data.resolved_objects.length} visualizations to be inlined`
-  );
+  const migratedVisualizations = await migrateSavedObjects("visualization");
+  const migratedLens = await migrateSavedObjects("lens");
+  const migratedMap = await migrateSavedObjects("map");
 
   const dashboardPath = `${folderPath}/dashboard`;
   const dExists = fs.existsSync(dashboardPath);
@@ -130,7 +97,7 @@ function rehydrateAttributes(attributes) {
       },
     }
   );
-  let counter = new Set();
+  let counter = { visualization: new Set(), lens: new Set(), map: new Set() };
   const inlinedDashboards = response4.data.resolved_objects.map(
     ({ saved_object: d }) => {
       console.log(`Processing dashboard ${d.attributes.title}`);
@@ -159,6 +126,7 @@ function rehydrateAttributes(attributes) {
               ),
             },
           };
+          delete p.panelRefName;
           references.splice(references.indexOf(ref), 1);
           references.push(
             ...visToInline.references.map((r) => ({
@@ -170,7 +138,47 @@ function rehydrateAttributes(attributes) {
           console.log(
             `Inlined a vis, pushed ${visToInline.references.length} inner references`
           );
-          counter.add(ref.id);
+          counter.visualization.add(ref.id);
+        } else if (ref && migratedLens.has(ref.id)) {
+          const visToInline = migratedLens.get(ref.id);
+          p.version = visToInline.migrationVersion.lens;
+          p.embeddableConfig.attributes = visToInline.attributes;
+          delete p.panelRefName;
+          references.splice(references.indexOf(ref), 1);
+          references.push(
+            ...visToInline.references.map((r) => ({
+              type: r.type,
+              name: `${p.panelIndex}:${r.name}`,
+              id: r.id,
+            }))
+          );
+          console.log(
+            `Inlined a lens, pushed ${visToInline.references.length} inner references`
+          );
+          counter.lens.add(ref.id);
+        } else if (ref && migratedMap.has(ref.id)) {
+          const visToInline = migratedMap.get(ref.id);
+          p.version = visToInline.migrationVersion.map;
+          p.embeddableConfig.attributes = {
+            title: visToInline.attributes.title,
+            description: visToInline.attributes.description,
+            uiStateJSON: visToInline.attributes.uiStateJSON,
+            mapStateJSON: visToInline.attributes.mapStateJSON,
+            layerListJSON: visToInline.attributes.layerListJSON,
+          };
+          delete p.panelRefName;
+          references.splice(references.indexOf(ref), 1);
+          references.push(
+            ...visToInline.references.map((r) => ({
+              type: r.type,
+              name: `${p.panelIndex}:${r.name}`,
+              id: r.id,
+            }))
+          );
+          console.log(
+            `Inlined a map, pushed ${visToInline.references.length} inner references`
+          );
+          counter.map.add(ref.id);
         } else {
           if (!ref) {
             if (p.type === undefined) {
@@ -189,17 +197,47 @@ function rehydrateAttributes(attributes) {
       return d;
     }
   );
-  console.log(`Inlined ${counter.size} visualizations`);
-  if (counter.size !== response2.data.resolved_objects.length) {
-    for (v in migratedVisualizations.values()) {
-      if (!counter.has(v.id)) {
+  console.log(`Inlined ${counter.visualization.size} visualizations`);
+  console.log(`Inlined ${counter.map.size} maps`);
+  console.log(`Inlined ${counter.lens.size} lenses`);
+  if (counter.visualization.size !== migratedVisualizations.size) {
+    console.log(
+      `Some visualizations did not get inlined! ${counter.visualization.size}/${migratedVisualizations.size}`
+    );
+    [...migratedVisualizations.values()].map((v) => {
+      if (!counter.visualization.has(v.id)) {
         console.log(`Did not inline ${v.id} anywhere`);
       }
-    }
-    throw new Error("Some visualizations did not get inlined!");
+    });
   }
-  console.log("Removing visualization folder");
-  fs.rmSync(visPath, { force: true, recursive: true });
+  if (counter.map.size !== migratedMap.size) {
+    console.log("Some maps did not get inlined!");
+    [...migratedMap.values()].map((v) => {
+      if (!counter.map.has(v.id)) {
+        console.log(`Did not inline ${v.id} anywhere`);
+      }
+    });
+  }
+  if (counter.lens.size !== migratedLens.size) {
+    console.log("Some lens did not get inlined!");
+    [...migratedLens.values()].map((v) => {
+      if (!counter.lens.has(v.id)) {
+        console.log(`Did not inline ${v.id} anywhere`);
+      }
+    });
+  }
+  if (fs.existsSync(`${folderPath}/visualization`)) {
+    console.log("Removing visualization folder");
+    fs.rmSync(`${folderPath}/visualization`, { force: true, recursive: true });
+  }
+  if (fs.existsSync(`${folderPath}/map`)) {
+    console.log("Removing maps folder");
+    fs.rmSync(`${folderPath}/map`, { force: true, recursive: true });
+  }
+  if (fs.existsSync(`${folderPath}/lens`)) {
+    console.log("Removing lens folder");
+    fs.rmSync(`${folderPath}/lens`, { force: true, recursive: true });
+  }
   console.log("Writing back dashboards");
   inlinedDashboards.forEach((d) => {
     fs.writeFileSync(
@@ -216,3 +254,52 @@ function rehydrateAttributes(attributes) {
   }
   fs.writeFileSync("./result.json", JSON.stringify(inlinedDashboards, null, 2));
 })();
+
+async function migrateSavedObjects(subFolder) {
+  const visPath = `${folderPath}/${subFolder}`;
+  const exists = fs.existsSync(visPath);
+  if (!exists) return new Map();
+  const visualizationPaths = fs.readdirSync(visPath);
+  const visualizations = visualizationPaths.map((vis) =>
+    JSON.parse(fs.readFileSync(`${visPath}/${vis}`, { encoding: "utf8" }))
+  );
+
+  const response = await axios.post(
+    `${baseUrl}/api/saved_objects/_bulk_create?overwrite=true`,
+    visualizations.map(
+      ({ type, id, attributes, references, migrationVersion }) => ({
+        type,
+        id,
+        attributes: cleanupAttributes(attributes),
+        references,
+        migrationVersion,
+      })
+    ),
+    {
+      headers: {
+        "kbn-xsrf": "abc",
+      },
+    }
+  );
+  if (response.data.saved_objects.some((s) => s.error)) {
+    throw new Error(`error loading ${subFolder}`);
+  }
+  const response2 = await axios.post(
+    `${baseUrl}/api/saved_objects/_bulk_resolve`,
+    visualizations.map((v) => ({ type: subFolder, id: v.id })),
+    {
+      headers: {
+        "kbn-xsrf": "abc",
+      },
+    }
+  );
+  const migratedVisualizations = new Map();
+  response2.data.resolved_objects.forEach((s) => {
+    if (!s.outcome === "exactMatch") throw new Error();
+    migratedVisualizations.set(s.saved_object.id, s.saved_object);
+  });
+  console.log(
+    `Prepared ${response2.data.resolved_objects.length} ${subFolder}s to be inlined`
+  );
+  return migratedVisualizations;
+}
