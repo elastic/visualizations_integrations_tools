@@ -89,7 +89,7 @@ function rehydrateAttributes(attributes) {
     throw new Error("error loading dashboards");
   }
   const response4 = await axios.post(
-    `${baseUrl}/api/saved_objects/_bulk_resolve`,
+    `${baseUrl}/api/saved_objects/_bulk_get`,
     dashboards.map((d) => ({ type: "dashboard", id: d.id })),
     {
       headers: {
@@ -98,8 +98,8 @@ function rehydrateAttributes(attributes) {
     }
   );
   let counter = { visualization: new Set(), lens: new Set(), map: new Set() };
-  const inlinedDashboards = response4.data.resolved_objects.map(
-    ({ saved_object: d }) => {
+  const inlinedDashboards = response4.data.saved_objects.map(
+    (d) => {
       console.log(`Processing dashboard ${d.attributes.title}`);
       const attributes = d.attributes;
       const references = d.references;
@@ -285,7 +285,7 @@ async function migrateSavedObjects(subFolder) {
     throw new Error(`error loading ${subFolder}`);
   }
   const response2 = await axios.post(
-    `${baseUrl}/api/saved_objects/_bulk_resolve`,
+    `${baseUrl}/api/saved_objects/_bulk_get`,
     visualizations.map((v) => ({ type: subFolder, id: v.id })),
     {
       headers: {
@@ -294,12 +294,12 @@ async function migrateSavedObjects(subFolder) {
     }
   );
   const migratedVisualizations = new Map();
-  response2.data.resolved_objects.forEach((s) => {
-    if (!s.outcome === "exactMatch") throw new Error();
-    migratedVisualizations.set(s.saved_object.id, s.saved_object);
+  response2.data.saved_objects.forEach((s) => {
+    if (s.error) throw new Error(s.error);
+    migratedVisualizations.set(s.id, s);
   });
   console.log(
-    `Prepared ${response2.data.resolved_objects.length} ${subFolder}s to be inlined`
+    `Prepared ${response2.data.saved_objects.length} ${subFolder}s to be inlined`
   );
   return migratedVisualizations;
 }
