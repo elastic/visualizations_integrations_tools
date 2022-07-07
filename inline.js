@@ -98,105 +98,106 @@ function rehydrateAttributes(attributes) {
     }
   );
   let counter = { visualization: new Set(), lens: new Set(), map: new Set() };
-  const inlinedDashboards = response4.data.saved_objects.map(
-    (d) => {
-      console.log(`Processing dashboard ${d.attributes.title}`);
-      const attributes = d.attributes;
-      const references = d.references;
-      const panels = JSON.parse(attributes.panelsJSON);
-      panels.forEach((p) => {
-        const ref =
-          references.find(
-            (r) => r.name === `${p.panelIndex}:panel_${p.panelIndex}`
-          ) || references.find((r) => r.name === `${p.panelRefName}`);
-        if (ref && migratedVisualizations.has(ref.id)) {
-          const visToInline = migratedVisualizations.get(ref.id);
-          const visState = JSON.parse(visToInline.attributes.visState);
-          p.version = visToInline.migrationVersion.visualization;
-          p.embeddableConfig.savedVis = {
-            title: visToInline.attributes.title,
-            description: visToInline.attributes.description,
-            uiState: visToInline.attributes.uiStateJSON,
-            params: visState.params,
-            type: visState.type,
-            data: {
-              aggs: !visState.aggs ? undefined : visState.aggs,
-              searchSource: JSON.parse(
-                visToInline.attributes.kibanaSavedObjectMeta.searchSourceJSON
-              ),
-            },
-          };
-          delete p.panelRefName;
-          references.splice(references.indexOf(ref), 1);
-          references.push(
-            ...visToInline.references.map((r) => ({
-              type: r.type,
-              name: `${p.panelIndex}:${r.name}`,
-              id: r.id,
-            }))
-          );
-          console.log(
-            `Inlined a vis, pushed ${visToInline.references.length} inner references`
-          );
-          counter.visualization.add(ref.id);
-        } else if (ref && migratedLens.has(ref.id)) {
-          const visToInline = migratedLens.get(ref.id);
-          p.version = visToInline.migrationVersion.lens;
-          p.embeddableConfig.attributes = visToInline.attributes;
-          delete p.panelRefName;
-          references.splice(references.indexOf(ref), 1);
-          references.push(
-            ...visToInline.references.map((r) => ({
-              type: r.type,
-              name: `${p.panelIndex}:${r.name}`,
-              id: r.id,
-            }))
-          );
-          console.log(
-            `Inlined a lens, pushed ${visToInline.references.length} inner references`
-          );
-          counter.lens.add(ref.id);
-        } else if (ref && migratedMap.has(ref.id)) {
-          const visToInline = migratedMap.get(ref.id);
-          p.version = visToInline.migrationVersion.map;
-          p.embeddableConfig.attributes = {
-            title: visToInline.attributes.title,
-            description: visToInline.attributes.description,
-            uiStateJSON: visToInline.attributes.uiStateJSON,
-            mapStateJSON: visToInline.attributes.mapStateJSON,
-            layerListJSON: visToInline.attributes.layerListJSON,
-          };
-          delete p.panelRefName;
-          references.splice(references.indexOf(ref), 1);
-          references.push(
-            ...visToInline.references.map((r) => ({
-              type: r.type,
-              name: `${p.panelIndex}:${r.name}`,
-              id: r.id,
-            }))
-          );
-          console.log(
-            `Inlined a map, pushed ${visToInline.references.length} inner references`
-          );
-          counter.map.add(ref.id);
-        } else {
-          if (!ref) {
-            if (p.type === undefined) {
-              console.log(d.references);
-              throw new Error("Could not match reference");
-            }
-            console.log(
-              `Leaving panel of type ${p.type}, seems to be inlined already`
-            );
-          } else {
-            console.log(`Leaving panel of type ${p.type}`);
+  const inlinedDashboards = response4.data.saved_objects.map((d) => {
+    console.log(`Processing dashboard ${d.attributes.title}`);
+    const attributes = d.attributes;
+    const references = d.references;
+    const panels = JSON.parse(attributes.panelsJSON);
+    panels.forEach((p) => {
+      const ref =
+        references.find(
+          (r) => r.name === `${p.panelIndex}:panel_${p.panelIndex}`
+        ) || references.find((r) => r.name === `${p.panelRefName}`);
+      if (ref && migratedVisualizations.has(ref.id)) {
+        const visToInline = migratedVisualizations.get(ref.id);
+        const visState = JSON.parse(visToInline.attributes.visState);
+        p.version = visToInline.migrationVersion.visualization;
+        p.embeddableConfig.savedVis = {
+          title: visToInline.attributes.title,
+          description: visToInline.attributes.description,
+          uiState:
+            typeof visToInline.attributes.uiStateJSON === "string"
+              ? JSON.parse(visToInline.attributes.uiStateJSON)
+              : visToInline.attributes.uiStateJSON,
+          params: visState.params,
+          type: visState.type,
+          data: {
+            aggs: !visState.aggs ? undefined : visState.aggs,
+            searchSource: JSON.parse(
+              visToInline.attributes.kibanaSavedObjectMeta.searchSourceJSON
+            ),
+          },
+        };
+        delete p.panelRefName;
+        references.splice(references.indexOf(ref), 1);
+        references.push(
+          ...visToInline.references.map((r) => ({
+            type: r.type,
+            name: `${p.panelIndex}:${r.name}`,
+            id: r.id,
+          }))
+        );
+        console.log(
+          `Inlined a vis, pushed ${visToInline.references.length} inner references`
+        );
+        counter.visualization.add(ref.id);
+      } else if (ref && migratedLens.has(ref.id)) {
+        const visToInline = migratedLens.get(ref.id);
+        p.version = visToInline.migrationVersion.lens;
+        p.embeddableConfig.attributes = visToInline.attributes;
+        delete p.panelRefName;
+        references.splice(references.indexOf(ref), 1);
+        references.push(
+          ...visToInline.references.map((r) => ({
+            type: r.type,
+            name: `${p.panelIndex}:${r.name}`,
+            id: r.id,
+          }))
+        );
+        console.log(
+          `Inlined a lens, pushed ${visToInline.references.length} inner references`
+        );
+        counter.lens.add(ref.id);
+      } else if (ref && migratedMap.has(ref.id)) {
+        const visToInline = migratedMap.get(ref.id);
+        p.version = visToInline.migrationVersion.map;
+        p.embeddableConfig.attributes = {
+          title: visToInline.attributes.title,
+          description: visToInline.attributes.description,
+          uiStateJSON: visToInline.attributes.uiStateJSON,
+          mapStateJSON: visToInline.attributes.mapStateJSON,
+          layerListJSON: visToInline.attributes.layerListJSON,
+        };
+        delete p.panelRefName;
+        references.splice(references.indexOf(ref), 1);
+        references.push(
+          ...visToInline.references.map((r) => ({
+            type: r.type,
+            name: `${p.panelIndex}:${r.name}`,
+            id: r.id,
+          }))
+        );
+        console.log(
+          `Inlined a map, pushed ${visToInline.references.length} inner references`
+        );
+        counter.map.add(ref.id);
+      } else {
+        if (!ref) {
+          if (p.type === undefined) {
+            console.log(d.references);
+            throw new Error("Could not match reference");
           }
+          console.log(
+            `Leaving panel of type ${p.type}, seems to be inlined already`
+          );
+        } else {
+          console.log(`Leaving panel of type ${p.type}`);
         }
-      });
-      attributes.panelsJSON = JSON.stringify(panels);
-      return d;
-    }
-  );
+      }
+    });
+    attributes.panelsJSON = JSON.stringify(panels);
+    return d;
+  });
   console.log(`Inlined ${counter.visualization.size} visualizations`);
   console.log(`Inlined ${counter.map.size} maps`);
   console.log(`Inlined ${counter.lens.size} lenses`);
