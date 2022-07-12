@@ -146,7 +146,7 @@ function rehydrateAttributes(attributes) {
         const visToInline = migratedLens.get(ref.id);
         p.version = visToInline.migrationVersion.lens;
         p.type = 'lens';
-        p.embeddableConfig.attributes = visToInline.attributes;
+        p.embeddableConfig.attributes = {...visToInline.attributes, references: visToInline.references };
         delete p.panelRefName;
         references.splice(references.indexOf(ref), 1);
         references.push(
