@@ -112,6 +112,7 @@ function rehydrateAttributes(attributes) {
         const visToInline = migratedVisualizations.get(ref.id);
         const visState = JSON.parse(visToInline.attributes.visState);
         p.version = visToInline.migrationVersion.visualization;
+        p.type = 'visualization';
         p.embeddableConfig.savedVis = {
           title: visToInline.attributes.title,
           description: visToInline.attributes.description,
@@ -144,6 +145,7 @@ function rehydrateAttributes(attributes) {
       } else if (ref && migratedLens.has(ref.id)) {
         const visToInline = migratedLens.get(ref.id);
         p.version = visToInline.migrationVersion.lens;
+        p.type = 'lens';
         p.embeddableConfig.attributes = visToInline.attributes;
         delete p.panelRefName;
         references.splice(references.indexOf(ref), 1);
@@ -161,6 +163,7 @@ function rehydrateAttributes(attributes) {
       } else if (ref && migratedMap.has(ref.id)) {
         const visToInline = migratedMap.get(ref.id);
         p.version = visToInline.migrationVersion.map;
+        p.type = 'map';
         p.embeddableConfig.attributes = {
           title: visToInline.attributes.title,
           description: visToInline.attributes.description,
@@ -273,7 +276,8 @@ async function migrateSavedObjects(subFolder) {
         id,
         attributes: cleanupAttributes(attributes),
         references,
-        migrationVersion,
+        // sometimes the migration version is not set
+        migrationVersion: migrationVersion || { [subFolder]: "7.0.0" },
       })
     ),
     {
