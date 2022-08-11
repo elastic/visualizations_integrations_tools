@@ -6,3 +6,7 @@
 	path = beats
 	url = https://github.com/elastic/beats
 	branch = main
+[submodule "kibana"]
+	path = kibana
+	url = https://github.com/elastic/kibana
+	branch = main
