@@ -7,7 +7,7 @@ This package has two functionalities:
 ## Prep
 
 * Have locally installed node (tested with `16.14.2`)
-* Init submodules using `git submodule init`
+* Init submodules using `git submodule update --init --recursive`
 * Install dependencies using `yarn`
 
 ## Analyzer usage
