@@ -10,10 +10,15 @@ This package has two functionalities:
 * Init submodules using `git submodule update --init --recursive`
 * Install dependencies using `yarn`
 
-## Analyzer usage
+## Legacy vis analyzer usage
 
 * Run `ES="<elasticsearch connection string>" node index.js`
 * Import `dataview.ndjson` to have a bunch of runtime fields analyzing the structure
+
+
+## Code analyzer usage
+
+* Run `ES="<elasticsearch connection string>" node index_kibana.js`
 
 ## Inliner usage
 
