@@ -1,8 +1,9 @@
-# legacy vis analyzer
+# visualizations integrations tools
 
-This package has two functionalities:
+This package currently has several functionalities:
 * Analyzes the usage of legacy visualization types in beats and integrations dashboard and indexes them into an Elasticsearch instance.
 * Inlines the visualizations in a given directory as by values panels
+* Tracks the usage of @elastic/charts vs the Lens embeddable in the Kibana code base
 
 ## Prep
 
