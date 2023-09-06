@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
+	"regexp"
 
 	"gopkg.in/yaml.v2"
 )
@@ -57,12 +57,9 @@ func cleanupDoc(doc map[string]interface{}) {
 	}
 }
 
-func getCommitData(file string) (map[string]string, error) {
-	splitPath := strings.Split(file, string(filepath.Separator))
-	base := splitPath[0]
-	localPath := splitPath[1:]
-	joinPath := append([]string{base}, localPath...)
-	gitCmd := fmt.Sprintf("cd %s && git log \"%s\"", base, strings.Join(joinPath, string(filepath.Separator)))
+func getCommitData(path string) (map[string]string, error) {
+	dir, file := filepath.Split(path)
+	gitCmd := fmt.Sprintf("cd %s && git log \"%s\"", dir, file)
 	cmd := exec.Command("sh", "-c", gitCmd)
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -70,15 +67,13 @@ func getCommitData(file string) (map[string]string, error) {
 		return nil, err
 	}
 	stdout := out.String()
-	hash := ""
-	author := ""
-	date := ""
-	fmt.Sscanf(stdout, "commit %s\nAuthor: %[^\n]\nDate: %[^\n]", &hash, &author, &date)
+	reg := regexp.MustCompile("commit (.+)\nAuthor: (.*)\nDate: (.*)")
+	submatches := reg.FindSubmatch([]byte(stdout))
 	commitData := make(map[string]string)
-	commitData["hash"] = hash
-	commitData["author"] = strings.TrimSpace(author)
-	dateTime, _ := time.Parse(time.RFC1123, strings.TrimSpace(date))
-	commitData["date"] = dateTime.Format("2006-01-02 15:04:05")
+	commitData["hash"] = string(submatches[1])
+	commitData["author"] = strings.TrimSpace(string(submatches[2]))
+	commitData["date"] = strings.TrimSpace(string(submatches[3]))
+	// fmt.Printf("%v", commitData)
 	return commitData, nil
 }
 
@@ -154,8 +149,7 @@ func collectDashboardFolder(app, path, source string) ([]map[string]interface{},
 		if err := json.Unmarshal(contents, &dashboard); err != nil {
 			continue
 		}
-		commit := ""
-		// commit, _ := getCommitData(dashboardFilePath)
+		commit, _ := getCommitData(dashboardFilePath)
 		dashboardReferences := dashboard["references"].([]interface{})
 		for _, reference := range dashboardReferences {
 			ref := reference.(map[string]interface{})
@@ -209,10 +203,7 @@ func collectDashboardFolder(app, path, source string) ([]map[string]interface{},
 						visualizations = append(visualizations, visualization)
 					}
 				}
-
-			}
-				
-	
+			}	
 		}
 	}
 	return visualizations, dashboards
