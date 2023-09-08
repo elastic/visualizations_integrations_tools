@@ -2,7 +2,7 @@
 
 # Check if a directory name was provided as a command-line argument
 if [ $# -ne 1 ]; then
-    echo "Usage: $0 <dashboard|lens|canvas|visualization>"
+    echo "Usage: $0 <dashboard|lens|visualization|map|index_pattern|security_rule|csp_rule_template|ml_module|tag>"
     exit 1
 fi
 
