@@ -1,4 +1,4 @@
-package main
+package analyzekbncontent
 
 import (
 	"bytes"
@@ -209,7 +209,7 @@ func collectDashboardFolder(app, path, source string) ([]map[string]interface{},
 	return visualizations, dashboards
 }
 
-func collectIntegrations(integrationsPath string) []map[string]interface{} {
+func CollectIntegrationsContent(integrationsPath string) []map[string]interface{} {
 	allVis := []map[string]interface{}{}
 	packages, err := os.ReadDir(filepath.Join(integrationsPath, "packages"))
 	fmt.Printf("Collecting integrations\n")
@@ -272,7 +272,7 @@ func collectIntegrations(integrationsPath string) []map[string]interface{} {
 // }
 
 func main() {
-	collectIntegrations("../integrations")
+	CollectIntegrationsContent("../integrations")
 	// for _, vis := range integrationData {
 	// 	fmt.Printf("%v\n", vis)
 	// }
