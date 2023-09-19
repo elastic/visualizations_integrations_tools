@@ -65,9 +65,9 @@ func cleanupDoc(doc map[string]interface{}) {
 }
 
 type CommitData struct {
-	hash   string
-	author string
-	date   string
+	Hash   string `json:"hash"`
+	Author string `json:"author"`
+	Date   string `date:"date"`
 }
 
 func getCommitData(path string) (CommitData, error) {
@@ -82,21 +82,21 @@ func getCommitData(path string) (CommitData, error) {
 	stdout := out.String()
 	reg := regexp.MustCompile("commit (.+)\nAuthor: (.*)\nDate: (.*)")
 	submatches := reg.FindSubmatch([]byte(stdout))
-	commitData := CommitData{hash: string(submatches[1]), author: strings.TrimSpace(string(submatches[2])), date: strings.TrimSpace(string(submatches[3]))}
+	commitData := CommitData{Hash: string(submatches[1]), Author: strings.TrimSpace(string(submatches[2])), Date: strings.TrimSpace(string(submatches[3]))}
 	// fmt.Printf("%v", commitData)
 	return commitData, nil
 }
 
 type Visualization struct {
-	doc       map[string]interface{}
-	soType    string
-	app       string
-	source    string
-	link      string
-	dashboard string
-	path      string
-	commit    CommitData
-	manifest  map[string]interface{}
+	Doc       map[string]interface{} 	`json:"doc"`
+	SoType    string			`json:"soType"`
+	App       string			`json:"app"`
+	Source    string			`json:"source"`
+	Link      string			`json:"link"`
+	Dashboard string			`json:"dashboard"`
+	Path      string			`json:"path"`
+	Commit    CommitData			`json:"commit"`
+	Manifest  map[string]interface{}	`json:"manifest"`
 }
 
 func collectVisualizationFolder(app, path, source string, dashboards map[string]string, folderName string) []Visualization {
@@ -123,14 +123,14 @@ func collectVisualizationFolder(app, path, source string, dashboards map[string]
 		cleanupDoc(doc)
 		dashboardTitle, _ := dashboards[doc["id"].(string)]
 		visualization := Visualization{
-			doc:       doc,
-			path:      visFilePath,
-			soType:    folderName,
-			app:       app,
-			source:    source,
-			link:      "by_reference",
-			dashboard: dashboardTitle,
-			commit:    commit,
+			Doc:       doc,
+			Path:      visFilePath,
+			SoType:    folderName,
+			App:       app,
+			Source:    source,
+			Link:      "by_reference",
+			Dashboard: dashboardTitle,
+			Commit:    commit,
 		}
 		visualizations = append(visualizations, visualization)
 	}
@@ -187,14 +187,14 @@ func collectDashboardFolder(app, path, source string) ([]Visualization, map[stri
 					embeddableConfig := panelMap["embeddableConfig"].(map[string]interface{})
 					if _, ok := embeddableConfig["savedVis"]; ok {
 						visualization := Visualization{
-							doc:       panelMap,
-							soType:    panelType,
-							app:       app,
-							source:    source,
-							link:      "by_value",
-							dashboard: dashboard["attributes"].(map[string]interface{})["title"].(string),
-							path:      dashboardFilePath,
-							commit:    commit,
+							Doc:       panelMap,
+							SoType:    panelType,
+							App:       app,
+							Source:    source,
+							Link:      "by_value",
+							Dashboard: dashboard["attributes"].(map[string]interface{})["title"].(string),
+							Path:      dashboardFilePath,
+							Commit:    commit,
 						}
 						visualizations = append(visualizations, visualization)
 					}
@@ -202,14 +202,14 @@ func collectDashboardFolder(app, path, source string) ([]Visualization, map[stri
 					embeddableConfig := panelMap["embeddableConfig"].(map[string]interface{})
 					if _, ok := embeddableConfig["attributes"]; ok {
 						visualization := Visualization{
-							doc:       panelMap,
-							soType:    panelType,
-							app:       app,
-							source:    source,
-							link:      "by_value",
-							dashboard: dashboard["attributes"].(map[string]interface{})["title"].(string),
-							path:      dashboardFilePath,
-							commit:    commit,
+							Doc:       panelMap,
+							SoType:    panelType,
+							App:       app,
+							Source:    source,
+							Link:      "by_value",
+							Dashboard: dashboard["attributes"].(map[string]interface{})["title"].(string),
+							Path:      dashboardFilePath,
+							Commit:    commit,
 						}
 						visualizations = append(visualizations, visualization)
 					}
@@ -249,7 +249,7 @@ func CollectIntegrationsVisualizations(integrationsPath string) []Visualization 
 			}
 			fmt.Printf("Collected %d vis in %s\n", len(visualizations), packageInfo.Name())
 			for _, vis := range visualizations {
-				vis.manifest = manifest
+				// vis.Manifest = manifest
 				allVis = append(allVis, vis)
 			}
 		}
@@ -282,12 +282,7 @@ func CollectIntegrationsVisualizations(integrationsPath string) []Visualization 
 // 	return allVis
 // }
 
-func main() {
-	visualizations := CollectIntegrationsVisualizations("../integrations")
-
-	// for _, vis := range integrationData {
-	// fmt.Printf("%v\n", vis)
-	// }
+func uploadVisualizations(visualizations []Visualization) {
 
 	indexName := "legacy_vis"
 
@@ -351,7 +346,6 @@ func main() {
 		// Prepare the data payload: encode vis to JSON
 		
 		data, err := json.Marshal(vis)
-		log.Printf("%v", data)
 		if err != nil {
 			log.Fatalf("Cannot encode visualization %d: %s", i, err)
 		}
@@ -406,4 +400,9 @@ func main() {
 	// for _, vis := range beatsData {
 	// 	fmt.Printf("%v\n", vis)
 	// }
+}
+
+func main() {
+	visualizations := CollectIntegrationsVisualizations("../integrations")
+	uploadVisualizations(visualizations)
 }
