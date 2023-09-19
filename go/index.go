@@ -5,15 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"regexp"
-	"log"
+	"strings"
 
-	"gopkg.in/yaml.v2"
+	"context"
 	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esutil"
+	"gopkg.in/yaml.v2"
+	"runtime"
+	"sync/atomic"
+	"time"
 )
 
 func cleanupDoc(doc map[string]interface{}) {
@@ -60,9 +65,9 @@ func cleanupDoc(doc map[string]interface{}) {
 }
 
 type CommitData struct {
-	hash string
+	hash   string
 	author string
-	date string	
+	date   string
 }
 
 func getCommitData(path string) (CommitData, error) {
@@ -77,21 +82,21 @@ func getCommitData(path string) (CommitData, error) {
 	stdout := out.String()
 	reg := regexp.MustCompile("commit (.+)\nAuthor: (.*)\nDate: (.*)")
 	submatches := reg.FindSubmatch([]byte(stdout))
-	commitData := CommitData{ hash: string(submatches[1]), author: strings.TrimSpace(string(submatches[2])), date: strings.TrimSpace(string(submatches[3])) }
+	commitData := CommitData{hash: string(submatches[1]), author: strings.TrimSpace(string(submatches[2])), date: strings.TrimSpace(string(submatches[3]))}
 	// fmt.Printf("%v", commitData)
 	return commitData, nil
 }
 
 type Visualization struct {
-	doc map[string]interface{}
-	soType string
-	app string
-	source string
-	link string
+	doc       map[string]interface{}
+	soType    string
+	app       string
+	source    string
+	link      string
 	dashboard string
-	path string
-	commit CommitData
-	manifest map[string]interface{}
+	path      string
+	commit    CommitData
+	manifest  map[string]interface{}
 }
 
 func collectVisualizationFolder(app, path, source string, dashboards map[string]string, folderName string) []Visualization {
@@ -209,13 +214,13 @@ func collectDashboardFolder(app, path, source string) ([]Visualization, map[stri
 						visualizations = append(visualizations, visualization)
 					}
 				}
-			}	
+			}
 		}
 	}
 	return visualizations, dashboards
 }
 
-func CollectIntegrationsContent(integrationsPath string) []Visualization {
+func CollectIntegrationsVisualizations(integrationsPath string) []Visualization {
 	var allVis []Visualization
 	packages, err := os.ReadDir(filepath.Join(integrationsPath, "packages"))
 	fmt.Printf("Collecting integrations\n")
@@ -278,11 +283,13 @@ func CollectIntegrationsContent(integrationsPath string) []Visualization {
 // }
 
 func main() {
-	// integrationData := CollectIntegrationsContent("../integrations")
+	visualizations := CollectIntegrationsVisualizations("../integrations")
 
 	// for _, vis := range integrationData {
-		// fmt.Printf("%v\n", vis)
+	// fmt.Printf("%v\n", vis)
 	// }
+
+	indexName := "legacy_vis"
 
 	es, err := elasticsearch.NewClient(elasticsearch.Config{})
 
@@ -292,7 +299,7 @@ func main() {
 
 	log.Println(es.Info())
 
-	_, err = es.Indices.Delete([]string{"legacy_vis"}, es.Indices.Delete.WithAllowNoIndices(true))
+	_, err = es.Indices.Delete([]string{indexName}, es.Indices.Delete.WithIgnoreUnavailable(true))
 
 	if err != nil {
 		fmt.Printf("Problem deleting old index %v", err)
@@ -320,15 +327,81 @@ func main() {
 	    }
 	}`
 
-	indexCreateRes, err := es.Indices.Create("legacy_vis", es.Indices.Create.WithBody(strings.NewReader(mapping)))
+	_, err = es.Indices.Create(indexName, es.Indices.Create.WithBody(strings.NewReader(mapping)))
 
 	if err != nil {
-		fmt.Printf("Problem creating index: %v\n", err);
+		fmt.Printf("Problem creating index: %v\n", err)
 	}
 
-	fmt.Printf("%v", indexCreateRes)
-	// client.Indices.Create("my_index")
-	
+	bi, err := esutil.NewBulkIndexer(esutil.BulkIndexerConfig{
+		Index:         indexName,
+		Client:        es,
+		NumWorkers:    runtime.NumCPU(),
+		FlushBytes:    5e+6,
+		FlushInterval: 30 * time.Second, // The periodic flush interval
+	})
+
+	if err != nil {
+		log.Fatalf("Error creating the indexer: %s", err)
+	}
+
+	var countSuccessful uint64
+
+	for i, vis := range visualizations {
+		// Prepare the data payload: encode vis to JSON
+		
+		data, err := json.Marshal(vis)
+		log.Printf("%v", data)
+		if err != nil {
+			log.Fatalf("Cannot encode visualization %d: %s", i, err)
+		}
+
+		// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+		//
+		// Add an item to the BulkIndexer
+		//
+		err = bi.Add(
+			context.Background(),
+			esutil.BulkIndexerItem{
+				// Action field configures the operation to perform (index, create, delete, update)
+				Action: "index",
+
+				// DocumentID is the (optional) document ID
+				// DocumentID: strconv.Itoa(a.ID),
+
+				// Body is an `io.Reader` with the payload
+				Body: bytes.NewReader(data),
+
+				// OnSuccess is called for each successful operation
+				OnSuccess: func(ctx context.Context, item esutil.BulkIndexerItem, res esutil.BulkIndexerResponseItem) {
+					atomic.AddUint64(&countSuccessful, 1)
+				},
+
+				// OnFailure is called for each failed operation
+				OnFailure: func(ctx context.Context, item esutil.BulkIndexerItem, res esutil.BulkIndexerResponseItem, err error) {
+					if err != nil {
+						log.Printf("ERROR: %s", err)
+					} else {
+						log.Printf("ERROR: %s: %s", res.Error.Type, res.Error.Reason)
+					}
+				},
+			},
+		)
+
+		if err != nil {
+			log.Fatalf("Unexpected error: %s", err)
+		}
+	}
+
+	// Close the indexer
+	if err := bi.Close(context.Background()); err != nil {
+		log.Fatalf("Unexpected error: %s", err)
+	}
+
+	biStats := bi.Stats()
+
+	log.Printf("%v", biStats)
+
 	// beatsData := collectBeats()
 	// for _, vis := range beatsData {
 	// 	fmt.Printf("%v\n", vis)
