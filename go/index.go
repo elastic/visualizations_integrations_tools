@@ -67,12 +67,12 @@ func cleanupDoc(doc map[string]interface{}) {
 type CommitData struct {
 	Hash   string `json:"hash"`
 	Author string `json:"author"`
-	Date   string `date:"date"`
+	Date   string `json:"date"`
 }
 
 func getCommitData(path string) (CommitData, error) {
 	dir, file := filepath.Split(path)
-	gitCmd := fmt.Sprintf("cd %s && git log \"%s\"", dir, file)
+	gitCmd := fmt.Sprintf("cd %s && git log --date=iso-strict \"%s\"", dir, file)
 	cmd := exec.Command("sh", "-c", gitCmd)
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -83,7 +83,6 @@ func getCommitData(path string) (CommitData, error) {
 	reg := regexp.MustCompile("commit (.+)\nAuthor: (.*)\nDate: (.*)")
 	submatches := reg.FindSubmatch([]byte(stdout))
 	commitData := CommitData{Hash: string(submatches[1]), Author: strings.TrimSpace(string(submatches[2])), Date: strings.TrimSpace(string(submatches[3]))}
-	// fmt.Printf("%v", commitData)
 	return commitData, nil
 }
 
