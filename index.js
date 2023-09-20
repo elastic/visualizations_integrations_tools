@@ -8,7 +8,8 @@ const client = new Client({
 });
 
 (async function () {
-  const vis = [...collectIntegrations(), ...collectBeats()];
+  //const vis = [...collectIntegrations(), ...collectBeats()];
+  const vis = [...collectIntegrations()];
 
   if (fs.existsSync("./result.json")) {
     fs.rmSync("./result.json");

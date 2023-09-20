@@ -135,7 +135,7 @@ function collectDashboardFolder(app, path, source) {
 function collectIntegrations(basePath = "./integrations") {
   const allVis = [];
   const packages = fs.readdirSync(`${basePath}/packages`);
-  packages.forEach((package) => {
+  packages.slice.forEach((package) => {
     const { visualizations, dashboards } = collectDashboardFolder(
       package,
       `${basePath}/packages/${package}/kibana`,

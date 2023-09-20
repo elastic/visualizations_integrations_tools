@@ -15,7 +15,7 @@ import (
 	"context"
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esutil"
-	"gopkg.in/yaml.v2"
+	"sigs.k8s.io/yaml"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -220,6 +220,25 @@ func collectDashboardFolder(app, path, source string) ([]Visualization, map[stri
 	return visualizations, dashboards
 }
 
+// TODO I think some of this logic is superfluous. It may just serve to coerce the manifest into the correct type.
+func collectManifest(manifestPath string) map[string]interface{} {
+	manifestContents, err := ioutil.ReadFile(manifestPath)
+	if err != nil {
+		log.Printf("Error reading manifest: %v\n", err)
+	}
+	bytes, jsonErr := yaml.YAMLToJSON(manifestContents)
+	if jsonErr != nil {
+		log.Printf("Error converting manifest YAML to JSON: %v\n", jsonErr)
+	}
+	var manifest map[string]interface{}
+	marshalErr := json.Unmarshal(bytes, &manifest)
+	if marshalErr != nil {
+		log.Printf("Error marshalling manifest JSON: %v\n", marshalErr)
+	}
+
+	return manifest
+}
+
 func CollectIntegrationsVisualizations(integrationsPath string) []Visualization {
 	var allVis []Visualization
 	packages, err := os.ReadDir(filepath.Join(integrationsPath, "packages"))
@@ -230,26 +249,19 @@ func CollectIntegrationsVisualizations(integrationsPath string) []Visualization 
 	}
 	for _, packageInfo := range packages {
 		if packageInfo.IsDir() {
-
 			packagePath := filepath.Join(integrationsPath, "packages", packageInfo.Name(), "kibana")
 			manifestPath := filepath.Join(integrationsPath, "packages", packageInfo.Name(), "manifest.yml")
-			manifestContents, err := ioutil.ReadFile(manifestPath)
-			if err != nil {
-				fmt.Printf("Error reading manifest: %v\n", err)
-				continue
-			}
-			var manifest map[string]interface{}
-			if err := yaml.Unmarshal(manifestContents, &manifest); err != nil {
-				fmt.Printf("Error parsing manifest: %v\n", err)
-				continue
-			}
+			manifest := collectManifest(manifestPath)
+
 			visualizations, dashboards := collectDashboardFolder(packageInfo.Name(), packagePath, "integration")
 			for _, folderName := range []string{"visualization", "lens", "map", "search"} {
 				visualizations = append(visualizations, collectVisualizationFolder(packageInfo.Name(), packagePath, "integration", dashboards, folderName)...)
 			}
+
 			fmt.Printf("Collected %d vis in %s\n", len(visualizations), packageInfo.Name())
+
 			for _, vis := range visualizations {
-				// vis.Manifest = manifest
+				vis.Manifest = manifest
 				allVis = append(allVis, vis)
 			}
 		}
