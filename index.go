@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-
+	
 	"context"
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esutil"
@@ -98,6 +98,12 @@ type Visualization struct {
 	Manifest  map[string]interface{}	`json:"manifest"`
 }
 
+type PanelInfo struct {
+	Doc       map[string]interface{} 	`json:"doc"`
+	SoType    string			`json:"soType"`
+	Link      string			`json:"link"`
+}
+
 func collectVisualizationFolder(app, path, source string, dashboards map[string]string, folderName string) []Visualization {
 	visPath := filepath.Join(path, folderName)
 	if _, err := os.Stat(visPath); os.IsNotExist(err) {
@@ -136,6 +142,47 @@ func collectVisualizationFolder(app, path, source string, dashboards map[string]
 	return visualizations
 }
 
+func collectDashboardPanels(panelsJSON interface{}) (panelInfos []PanelInfo, err error) {
+	var panels []interface{}
+	switch panelsJSON.(type) {
+	case string:
+		json.Unmarshal([]byte(panelsJSON.(string)), &panels)
+	default:
+		panels = panelsJSON.([]interface{})
+	}
+	for _, panel := range panels {
+		panelMap := panel.(map[string]interface{})
+
+		switch panelType := panelMap["type"].(type) {
+		default:
+			// No op. There is no panel type, so this is by-reference.
+
+		case string:
+			switch panelType {
+			case "visualization":
+				embeddableConfig := panelMap["embeddableConfig"].(map[string]interface{})
+				if _, ok := embeddableConfig["savedVis"]; ok {
+					panelInfos = append(panelInfos, PanelInfo{
+						Doc:       panelMap,
+						SoType:    panelType,
+						Link:      "by_value",
+					})
+				}
+			case "lens", "map":
+				embeddableConfig := panelMap["embeddableConfig"].(map[string]interface{})
+				if _, ok := embeddableConfig["attributes"]; ok {
+					panelInfos = append(panelInfos, PanelInfo{
+						Doc:       panelMap,
+						SoType:    panelType,
+						Link:      "by_value",
+					})
+				}
+			}
+		}
+	}
+	return panelInfos, nil
+}
+
 func collectDashboardFolder(app, path, source string) ([]Visualization, map[string]string) {
 	dashboardPath := filepath.Join(path, "dashboard")
 	if _, err := os.Stat(dashboardPath); os.IsNotExist(err) {
@@ -166,55 +213,20 @@ func collectDashboardFolder(app, path, source string) ([]Visualization, map[stri
 			dashboards[ref["id"].(string)] = dashboard["attributes"].(map[string]interface{})["title"].(string)
 		}
 		panelsJSON := dashboard["attributes"].(map[string]interface{})["panelsJSON"]
-		var panels []interface{}
-		switch panelsJSON.(type) {
-		case string:
-			json.Unmarshal([]byte(panelsJSON.(string)), &panels)
-		default:
-			panels = panelsJSON.([]interface{})
-		}
+		panels, _ := collectDashboardPanels(panelsJSON)
 		for _, panel := range panels {
-			panelMap := panel.(map[string]interface{})
-
-			switch panelType := panelMap["type"].(type) {
-			default:
-				// No op. There is no panel type, so this is by-reference.
-
-			case string:
-				switch panelType {
-				case "visualization":
-					embeddableConfig := panelMap["embeddableConfig"].(map[string]interface{})
-					if _, ok := embeddableConfig["savedVis"]; ok {
-						visualization := Visualization{
-							Doc:       panelMap,
-							SoType:    panelType,
-							App:       app,
-							Source:    source,
-							Link:      "by_value",
-							Dashboard: dashboard["attributes"].(map[string]interface{})["title"].(string),
-							Path:      dashboardFilePath,
-							Commit:    commit,
-						}
-						visualizations = append(visualizations, visualization)
-					}
-				case "lens", "map":
-					embeddableConfig := panelMap["embeddableConfig"].(map[string]interface{})
-					if _, ok := embeddableConfig["attributes"]; ok {
-						visualization := Visualization{
-							Doc:       panelMap,
-							SoType:    panelType,
-							App:       app,
-							Source:    source,
-							Link:      "by_value",
-							Dashboard: dashboard["attributes"].(map[string]interface{})["title"].(string),
-							Path:      dashboardFilePath,
-							Commit:    commit,
-						}
-						visualizations = append(visualizations, visualization)
-					}
-				}
-			}
+			visualizations = append(visualizations, Visualization{
+				Doc: panel.Doc,
+				SoType: panel.SoType,
+				Link: panel.Link,
+				App: app,
+				Source: source,
+				Dashboard: dashboard["attributes"].(map[string]interface{})["title"].(string),
+				Path: dashboardFilePath,
+				Commit: commit,
+			})
 		}
+		
 	}
 	return visualizations, dashboards
 }
