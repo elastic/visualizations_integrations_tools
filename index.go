@@ -11,12 +11,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	
+
 	"context"
+	"github.com/PaesslerAG/jsonpath"
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esutil"
-	"sigs.k8s.io/yaml"
 	"runtime"
+	"sigs.k8s.io/yaml"
 	"sync/atomic"
 	"time"
 )
@@ -87,21 +88,43 @@ func getCommitData(path string) (CommitData, error) {
 }
 
 type Visualization struct {
-	Doc       map[string]interface{} 	`json:"doc"`
-	SoType    string			`json:"soType"`
-	App       string			`json:"app"`
-	Source    string			`json:"source"`
-	Link      string			`json:"link"`
-	Dashboard string			`json:"dashboard"`
-	Path      string			`json:"path"`
-	Commit    CommitData			`json:"commit"`
-	Manifest  map[string]interface{}	`json:"manifest"`
+	Doc       map[string]interface{} `json:"doc"`
+	SoType    string                 `json:"soType"`
+	App       string                 `json:"app"`
+	Source    string                 `json:"source"`
+	Link      string                 `json:"link"`
+	Dashboard string                 `json:"dashboard"`
+	Path      string                 `json:"path"`
+	Commit    CommitData             `json:"commit"`
+	Manifest  map[string]interface{} `json:"manifest"`
+	VisType   string                 `json:"vis_type,omitempty"`
 }
 
 type PanelInfo struct {
-	Doc       map[string]interface{} 	`json:"doc"`
-	SoType    string			`json:"soType"`
-	Link      string			`json:"link"`
+	Doc      map[string]interface{}
+	SoType   string
+	Link     string
+	VisType  string
+}
+
+func getVisType(doc interface{}, soType string) (string, error) {
+	if soType != "visualization" {
+		return "", nil
+	}
+
+	if attrType, err := jsonpath.Get("$.attributes.type", doc); err == nil {
+		return attrType.(string), nil
+	}
+
+	if visStateType, err := jsonpath.Get("$.attributes.visState.type", doc); err == nil {
+		return visStateType.(string), nil
+	}
+
+	if embeddableType, err := jsonpath.Get("$.embeddableConfig.savedVis.type", doc); err == nil {
+		return embeddableType.(string), nil
+	}
+
+	return "", nil
 }
 
 func collectVisualizationFolder(app, path, source string, dashboards map[string]string, folderName string) []Visualization {
@@ -126,7 +149,14 @@ func collectVisualizationFolder(app, path, source string, dashboards map[string]
 		}
 		commit, _ := getCommitData(visFilePath)
 		cleanupDoc(doc)
+		var visType string
+
+		if result, err := getVisType(doc, folderName); err == nil {
+			visType = result
+		}
+
 		dashboardTitle, _ := dashboards[doc["id"].(string)]
+
 		visualization := Visualization{
 			Doc:       doc,
 			Path:      visFilePath,
@@ -136,6 +166,7 @@ func collectVisualizationFolder(app, path, source string, dashboards map[string]
 			Link:      "by_reference",
 			Dashboard: dashboardTitle,
 			Commit:    commit,
+			VisType:   visType,
 		}
 		visualizations = append(visualizations, visualization)
 	}
@@ -147,7 +178,7 @@ func collectDashboardPanels(panelsJSON interface{}) (panelInfos []PanelInfo, err
 	switch panelsJSON.(type) {
 	case string:
 		json.Unmarshal([]byte(panelsJSON.(string)), &panels)
-	default:
+	case []interface{}:
 		panels = panelsJSON.([]interface{})
 	}
 	for _, panel := range panels {
@@ -162,19 +193,33 @@ func collectDashboardPanels(panelsJSON interface{}) (panelInfos []PanelInfo, err
 			case "visualization":
 				embeddableConfig := panelMap["embeddableConfig"].(map[string]interface{})
 				if _, ok := embeddableConfig["savedVis"]; ok {
+					var visType string
+
+					if result, err := getVisType(panelMap, panelType); err == nil {
+						visType = result
+					}
+
 					panelInfos = append(panelInfos, PanelInfo{
-						Doc:       panelMap,
-						SoType:    panelType,
-						Link:      "by_value",
+						Doc:     panelMap,
+						SoType:  panelType,
+						Link:    "by_value",
+						VisType: visType,
 					})
 				}
 			case "lens", "map":
 				embeddableConfig := panelMap["embeddableConfig"].(map[string]interface{})
 				if _, ok := embeddableConfig["attributes"]; ok {
+					var visType string
+
+					if result, err := getVisType(panelMap, panelType); err == nil {
+						visType = result
+					}
+
 					panelInfos = append(panelInfos, PanelInfo{
-						Doc:       panelMap,
-						SoType:    panelType,
-						Link:      "by_value",
+						Doc:     panelMap,
+						SoType:  panelType,
+						Link:    "by_value",
+						VisType: visType,
 					})
 				}
 			}
@@ -216,17 +261,18 @@ func collectDashboardFolder(app, path, source string) ([]Visualization, map[stri
 		panels, _ := collectDashboardPanels(panelsJSON)
 		for _, panel := range panels {
 			visualizations = append(visualizations, Visualization{
-				Doc: panel.Doc,
-				SoType: panel.SoType,
-				Link: panel.Link,
-				App: app,
-				Source: source,
+				Doc:       panel.Doc,
+				SoType:    panel.SoType,
+				Link:      panel.Link,
+				VisType:   panel.VisType,
+				App:       app,
+				Source:    source,
 				Dashboard: dashboard["attributes"].(map[string]interface{})["title"].(string),
-				Path: dashboardFilePath,
-				Commit: commit,
+				Path:      dashboardFilePath,
+				Commit:    commit,
 			})
 		}
-		
+
 	}
 	return visualizations, dashboards
 }
@@ -334,6 +380,7 @@ func uploadVisualizations(visualizations []Visualization) {
 			"link": { "type": "keyword" }, 
 			"dashboard": { "type": "keyword" }, 
 			"path": { "type": "keyword" },
+			"vis_type": { "type": "keyword" },
 			"commit": {
 				"properties": {
 					"hash": { "type": "keyword" },
@@ -367,7 +414,7 @@ func uploadVisualizations(visualizations []Visualization) {
 
 	for i, vis := range visualizations {
 		// Prepare the data payload: encode vis to JSON
-		
+
 		data, err := json.Marshal(vis)
 		if err != nil {
 			log.Fatalf("Cannot encode visualization %d: %s", i, err)
