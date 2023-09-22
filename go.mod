@@ -12,6 +12,7 @@ require (
 require (
 	github.com/PaesslerAG/jsonpath v0.1.1
 	github.com/elastic/go-elasticsearch/v8 v8.10.0
+	github.com/elastic/kbncontent v0.0.0
 	sigs.k8s.io/yaml v1.3.0
 )
 

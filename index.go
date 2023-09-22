@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"context"
-	"github.com/PaesslerAG/jsonpath"
+	"github.com/elastic/kbncontent"
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esutil"
 	"runtime"
@@ -98,33 +98,7 @@ type Visualization struct {
 	Commit    CommitData             `json:"commit"`
 	Manifest  map[string]interface{} `json:"manifest"`
 	VisType   string                 `json:"vis_type,omitempty"`
-}
-
-type PanelInfo struct {
-	Doc      map[string]interface{}
-	SoType   string
-	Link     string
-	VisType  string
-}
-
-func getVisType(doc interface{}, soType string) (string, error) {
-	if soType != "visualization" {
-		return "", nil
-	}
-
-	if attrType, err := jsonpath.Get("$.attributes.type", doc); err == nil {
-		return attrType.(string), nil
-	}
-
-	if visStateType, err := jsonpath.Get("$.attributes.visState.type", doc); err == nil {
-		return visStateType.(string), nil
-	}
-
-	if embeddableType, err := jsonpath.Get("$.embeddableConfig.savedVis.type", doc); err == nil {
-		return embeddableType.(string), nil
-	}
-
-	return "", nil
+	IsLegacy  bool			`json:"is_legacy"`
 }
 
 func collectVisualizationFolder(app, path, source string, dashboards map[string]string, folderName string) []Visualization {
@@ -149,84 +123,29 @@ func collectVisualizationFolder(app, path, source string, dashboards map[string]
 		}
 		commit, _ := getCommitData(visFilePath)
 		cleanupDoc(doc)
-		var visType string
-
-		if result, err := getVisType(doc, folderName); err == nil {
-			visType = result
-		}
 
 		dashboardTitle, _ := dashboards[doc["id"].(string)]
 
+		desc, _ := kbncontent.DescribeVisualizationSavedObject(doc)
+
 		visualization := Visualization{
-			Doc:       doc,
+			Doc:       desc.Doc,
+			SoType:    desc.SoType,
+			Link:      desc.Link,
+			VisType:   desc.VisType,
+			IsLegacy:  desc.IsLegacy,
 			Path:      visFilePath,
-			SoType:    folderName,
 			App:       app,
 			Source:    source,
-			Link:      "by_reference",
 			Dashboard: dashboardTitle,
 			Commit:    commit,
-			VisType:   visType,
 		}
 		visualizations = append(visualizations, visualization)
 	}
 	return visualizations
 }
 
-func collectDashboardPanels(panelsJSON interface{}) (panelInfos []PanelInfo, err error) {
-	var panels []interface{}
-	switch panelsJSON.(type) {
-	case string:
-		json.Unmarshal([]byte(panelsJSON.(string)), &panels)
-	case []interface{}:
-		panels = panelsJSON.([]interface{})
-	}
-	for _, panel := range panels {
-		panelMap := panel.(map[string]interface{})
 
-		switch panelType := panelMap["type"].(type) {
-		default:
-			// No op. There is no panel type, so this is by-reference.
-
-		case string:
-			switch panelType {
-			case "visualization":
-				embeddableConfig := panelMap["embeddableConfig"].(map[string]interface{})
-				if _, ok := embeddableConfig["savedVis"]; ok {
-					var visType string
-
-					if result, err := getVisType(panelMap, panelType); err == nil {
-						visType = result
-					}
-
-					panelInfos = append(panelInfos, PanelInfo{
-						Doc:     panelMap,
-						SoType:  panelType,
-						Link:    "by_value",
-						VisType: visType,
-					})
-				}
-			case "lens", "map":
-				embeddableConfig := panelMap["embeddableConfig"].(map[string]interface{})
-				if _, ok := embeddableConfig["attributes"]; ok {
-					var visType string
-
-					if result, err := getVisType(panelMap, panelType); err == nil {
-						visType = result
-					}
-
-					panelInfos = append(panelInfos, PanelInfo{
-						Doc:     panelMap,
-						SoType:  panelType,
-						Link:    "by_value",
-						VisType: visType,
-					})
-				}
-			}
-		}
-	}
-	return panelInfos, nil
-}
 
 func collectDashboardFolder(app, path, source string) ([]Visualization, map[string]string) {
 	dashboardPath := filepath.Join(path, "dashboard")
@@ -258,13 +177,14 @@ func collectDashboardFolder(app, path, source string) ([]Visualization, map[stri
 			dashboards[ref["id"].(string)] = dashboard["attributes"].(map[string]interface{})["title"].(string)
 		}
 		panelsJSON := dashboard["attributes"].(map[string]interface{})["panelsJSON"]
-		panels, _ := collectDashboardPanels(panelsJSON)
+		panels, _ := kbncontent.DescribeByValueDashboardPanels(panelsJSON)
 		for _, panel := range panels {
 			visualizations = append(visualizations, Visualization{
 				Doc:       panel.Doc,
 				SoType:    panel.SoType,
 				Link:      panel.Link,
 				VisType:   panel.VisType,
+				IsLegacy:  panel.IsLegacy,
 				App:       app,
 				Source:    source,
 				Dashboard: dashboard["attributes"].(map[string]interface{})["title"].(string),
@@ -352,7 +272,6 @@ func CollectIntegrationsVisualizations(integrationsPath string) []Visualization 
 // }
 
 func uploadVisualizations(visualizations []Visualization) {
-
 	indexName := "legacy_vis"
 
 	es, err := elasticsearch.NewClient(elasticsearch.Config{})
@@ -381,6 +300,7 @@ func uploadVisualizations(visualizations []Visualization) {
 			"dashboard": { "type": "keyword" }, 
 			"path": { "type": "keyword" },
 			"vis_type": { "type": "keyword" },
+			"is_legacy": { "type": "boolean" },
 			"commit": {
 				"properties": {
 					"hash": { "type": "keyword" },
