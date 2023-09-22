@@ -13,9 +13,9 @@ import (
 	"strings"
 
 	"context"
-	"github.com/elastic/kbncontent"
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esutil"
+	"github.com/elastic/kbncontent"
 	"runtime"
 	"sigs.k8s.io/yaml"
 	"sync/atomic"
@@ -98,7 +98,8 @@ type Visualization struct {
 	Commit    CommitData             `json:"commit"`
 	Manifest  map[string]interface{} `json:"manifest"`
 	VisType   string                 `json:"vis_type,omitempty"`
-	IsLegacy  bool			`json:"is_legacy"`
+	VisTitle  string                 `json:"vis_title,omitempty"`
+	IsLegacy  bool                   `json:"is_legacy"`
 }
 
 func collectVisualizationFolder(app, path, source string, dashboards map[string]string, folderName string) []Visualization {
@@ -132,7 +133,8 @@ func collectVisualizationFolder(app, path, source string, dashboards map[string]
 			Doc:       desc.Doc,
 			SoType:    desc.SoType,
 			Link:      desc.Link,
-			VisType:   desc.VisType,
+			VisType:   desc.Type,
+			VisTitle:  desc.Title,
 			IsLegacy:  desc.IsLegacy,
 			Path:      visFilePath,
 			App:       app,
@@ -144,8 +146,6 @@ func collectVisualizationFolder(app, path, source string, dashboards map[string]
 	}
 	return visualizations
 }
-
-
 
 func collectDashboardFolder(app, path, source string) ([]Visualization, map[string]string) {
 	dashboardPath := filepath.Join(path, "dashboard")
@@ -183,7 +183,8 @@ func collectDashboardFolder(app, path, source string) ([]Visualization, map[stri
 				Doc:       panel.Doc,
 				SoType:    panel.SoType,
 				Link:      panel.Link,
-				VisType:   panel.VisType,
+				VisType:   panel.Type,
+				VisTitle:  panel.Title,
 				IsLegacy:  panel.IsLegacy,
 				App:       app,
 				Source:    source,
@@ -300,6 +301,7 @@ func uploadVisualizations(visualizations []Visualization) {
 			"dashboard": { "type": "keyword" }, 
 			"path": { "type": "keyword" },
 			"vis_type": { "type": "keyword" },
+			"vis_title": { "type": "keyword" },
 			"is_legacy": { "type": "boolean" },
 			"commit": {
 				"properties": {
