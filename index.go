@@ -22,49 +22,6 @@ import (
 	"time"
 )
 
-func cleanupDoc(doc map[string]interface{}) {
-	if uiStateJSON, ok := doc["attributes"].(map[string]interface{})["uiStateJSON"].(string); ok {
-		uiState := make(map[string]interface{})
-		if err := json.Unmarshal([]byte(uiStateJSON), &uiState); err == nil {
-			doc["attributes"].(map[string]interface{})["uiStateJSON"] = uiState
-		}
-	}
-	if visState, ok := doc["attributes"].(map[string]interface{})["visState"].(string); ok {
-		visStateMap := make(map[string]interface{})
-		if err := json.Unmarshal([]byte(visState), &visStateMap); err == nil {
-			doc["attributes"].(map[string]interface{})["visState"] = visStateMap
-		}
-	}
-	if kibanaSavedObjectMeta, ok := doc["attributes"].(map[string]interface{})["kibanaSavedObjectMeta"].(map[string]interface{}); ok {
-		if searchSourceJSON, ok := kibanaSavedObjectMeta["searchSourceJSON"].(string); ok {
-			searchSource := make(map[string]interface{})
-			if err := json.Unmarshal([]byte(searchSourceJSON), &searchSource); err == nil {
-				kibanaSavedObjectMeta["searchSourceJSON"] = searchSource
-			}
-		}
-	}
-	if visState, ok := doc["attributes"].(map[string]interface{})["visState"].(map[string]interface{}); ok {
-		if filter, ok := visState["params"].(map[string]interface{})["filter"]; ok {
-			if _, ok := filter.(string); !ok {
-				filterJSON, _ := json.Marshal(filter)
-				visState["params"].(map[string]interface{})["filter"] = string(filterJSON)
-			}
-		}
-		if series, ok := visState["params"].(map[string]interface{})["series"].([]interface{}); ok {
-			for _, s := range series {
-				if seriesMap, ok := s.(map[string]interface{}); ok {
-					if filter, ok := seriesMap["filter"]; ok {
-						if _, ok := filter.(string); !ok {
-							filterJSON, _ := json.Marshal(filter)
-							seriesMap["filter"] = string(filterJSON)
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
 type CommitData struct {
 	Hash   string `json:"hash"`
 	Author string `json:"author"`
@@ -98,6 +55,7 @@ type Visualization struct {
 	Commit    CommitData             `json:"commit"`
 	Manifest  map[string]interface{} `json:"manifest"`
 	VisType   string                 `json:"vis_type,omitempty"`
+	TSVBType  string                 `json:"vis_tsvb_type,omitempty"`
 	VisTitle  string                 `json:"vis_title,omitempty"`
 	IsLegacy  bool                   `json:"is_legacy"`
 }
@@ -123,7 +81,6 @@ func collectVisualizationFolder(app, path, source string, dashboards map[string]
 			continue
 		}
 		commit, _ := getCommitData(visFilePath)
-		cleanupDoc(doc)
 
 		dashboardTitle, _ := dashboards[doc["id"].(string)]
 
@@ -133,9 +90,10 @@ func collectVisualizationFolder(app, path, source string, dashboards map[string]
 			Doc:       desc.Doc,
 			SoType:    desc.SoType,
 			Link:      desc.Link,
-			VisType:   desc.Type,
-			VisTitle:  desc.Title,
-			IsLegacy:  desc.IsLegacy,
+			VisType:   desc.Type(),
+			TSVBType:  desc.TSVBType(),
+			VisTitle:  desc.Title(),
+			IsLegacy:  desc.IsLegacy(),
 			Path:      visFilePath,
 			App:       app,
 			Source:    source,
@@ -176,16 +134,19 @@ func collectDashboardFolder(app, path, source string) ([]Visualization, map[stri
 			ref := reference.(map[string]interface{})
 			dashboards[ref["id"].(string)] = dashboard["attributes"].(map[string]interface{})["title"].(string)
 		}
-		panelsJSON := dashboard["attributes"].(map[string]interface{})["panelsJSON"]
-		panels, _ := kbncontent.DescribeByValueDashboardPanels(panelsJSON)
+		panels, err := kbncontent.DescribeByValueDashboardPanels(dashboard)
+		if err != nil {
+			fmt.Printf("Issue parsing dashboard panels for %s: %v\n", dashboardFilePath, err)
+		}
 		for _, panel := range panels {
 			visualizations = append(visualizations, Visualization{
 				Doc:       panel.Doc,
 				SoType:    panel.SoType,
 				Link:      panel.Link,
-				VisType:   panel.Type,
-				VisTitle:  panel.Title,
-				IsLegacy:  panel.IsLegacy,
+				VisType:   panel.Type(),
+				TSVBType:  panel.TSVBType(),
+				VisTitle:  panel.Title(),
+				IsLegacy:  panel.IsLegacy(),
 				App:       app,
 				Source:    source,
 				Dashboard: dashboard["attributes"].(map[string]interface{})["title"].(string),
@@ -301,6 +262,7 @@ func uploadVisualizations(visualizations []Visualization) {
 			"dashboard": { "type": "keyword" }, 
 			"path": { "type": "keyword" },
 			"vis_type": { "type": "keyword" },
+			"vis_tsvb_type": { "type": "keyword" },
 			"vis_title": { "type": "keyword" },
 			"is_legacy": { "type": "boolean" },
 			"commit": {
@@ -394,7 +356,37 @@ func uploadVisualizations(visualizations []Visualization) {
 	// }
 }
 
+func saveVisualizationsToFile(visualizations []Visualization) {
+	// Marshal the data into a JSON string
+	jsonData, err := json.Marshal(visualizations)
+	if err != nil {
+		fmt.Println("Error marshaling JSON:", err)
+		return
+	}
+
+	// Define the file path
+	filePath := "result.json"
+
+	// Create or open the file for writing
+	file, err := os.Create(filePath)
+	if err != nil {
+		fmt.Println("Error creating file:", err)
+		return
+	}
+	defer file.Close()
+
+	// Write the JSON data to the file
+	_, err = file.Write(jsonData)
+	if err != nil {
+		fmt.Println("Error writing JSON to file:", err)
+		return
+	}
+
+	fmt.Printf("JSON data saved to %s\n", filePath)
+}
+
 func main() {
-	visualizations := CollectIntegrationsVisualizations("../integrations")
+	visualizations := CollectIntegrationsVisualizations("./integrations")
+	saveVisualizationsToFile(visualizations)
 	uploadVisualizations(visualizations)
 }
