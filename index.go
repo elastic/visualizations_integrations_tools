@@ -88,7 +88,7 @@ func collectVisualizationFolder(app, path, source string, dashboards map[string]
 
 		visualization := Visualization{
 			Doc:       desc.Doc,
-			SoType:    desc.SoType,
+			SoType:    desc.SavedObjectType,
 			Link:      desc.Link,
 			VisType:   desc.Type(),
 			TSVBType:  desc.TSVBType(),
@@ -141,7 +141,7 @@ func collectDashboardFolder(app, path, source string) ([]Visualization, map[stri
 		for _, panel := range panels {
 			visualizations = append(visualizations, Visualization{
 				Doc:       panel.Doc,
-				SoType:    panel.SoType,
+				SoType:    panel.SavedObjectType,
 				Link:      panel.Link,
 				VisType:   panel.Type(),
 				TSVBType:  panel.TSVBType(),
