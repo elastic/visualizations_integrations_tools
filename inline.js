@@ -60,6 +60,7 @@ function rehydrateAttributes(attributes) {
   const migratedVisualizations = await migrateSavedObjects("visualization");
   const migratedLens = await migrateSavedObjects("lens");
   const migratedMap = await migrateSavedObjects("map");
+  const migratedSearch = await migrateSavedObjects("search");
 
   const dashboardPath = `${folderPath}/dashboard`;
   const dExists = fs.existsSync(dashboardPath);
@@ -97,7 +98,12 @@ function rehydrateAttributes(attributes) {
       },
     }
   );
-  let counter = { visualization: new Set(), lens: new Set(), map: new Set() };
+  let counter = {
+    visualization: new Set(),
+    lens: new Set(),
+    map: new Set(),
+    search: new Set(),
+  };
   const inlinedDashboards = response4.data.saved_objects.map((d) => {
     console.log(`Processing dashboard ${d.attributes.title}`);
     const attributes = d.attributes;
@@ -112,7 +118,7 @@ function rehydrateAttributes(attributes) {
         const visToInline = migratedVisualizations.get(ref.id);
         const visState = JSON.parse(visToInline.attributes.visState);
         p.version = visToInline.migrationVersion.visualization;
-        p.type = 'visualization';
+        p.type = "visualization";
         p.embeddableConfig.savedVis = {
           title: visToInline.attributes.title,
           description: visToInline.attributes.description,
@@ -145,8 +151,11 @@ function rehydrateAttributes(attributes) {
       } else if (ref && migratedLens.has(ref.id)) {
         const visToInline = migratedLens.get(ref.id);
         p.version = visToInline.migrationVersion.lens;
-        p.type = 'lens';
-        p.embeddableConfig.attributes = {...visToInline.attributes, references: visToInline.references };
+        p.type = "lens";
+        p.embeddableConfig.attributes = {
+          ...visToInline.attributes,
+          references: visToInline.references,
+        };
         delete p.panelRefName;
         references.splice(references.indexOf(ref), 1);
         references.push(
@@ -163,7 +172,7 @@ function rehydrateAttributes(attributes) {
       } else if (ref && migratedMap.has(ref.id)) {
         const visToInline = migratedMap.get(ref.id);
         p.version = visToInline.migrationVersion.map;
-        p.type = 'map';
+        p.type = "map";
         p.embeddableConfig.attributes = {
           title: visToInline.attributes.title,
           description: visToInline.attributes.description,
@@ -184,6 +193,31 @@ function rehydrateAttributes(attributes) {
           `Inlined a map, pushed ${visToInline.references.length} inner references`
         );
         counter.map.add(ref.id);
+      } else if (ref && migratedSearch.has(ref.id)) {
+        const searchToInline = migratedSearch.get(ref.id);
+        p.version = searchToInline.migrationVersion.search; // TODO - check this
+        p.type = "search";
+        p.title = searchToInline.title;
+        p.description = searchToInline.description;
+        p.embeddableConfig.attributes = {
+          sort: searchToInline.attributes.sort,
+          columns: searchToInline.attributes.columns,
+          kibanaSavedObjectMeta:
+            searchToInline.attributes.kibanaSavedObjectMeta,
+          references: searchToInline.references,
+        };
+        delete p.panelRefName;
+        references.splice(references.indexOf(ref), 1);
+        references.push(
+          ...searchToInline.references.map((r) => ({
+            type: r.type,
+            name: `${p.panelIndex}:${r.name}`,
+            id: r.id,
+          }))
+        );
+        console.log(
+          `Inlined a search, pushed ${searchToInline.references.length} inner references`
+        );
       } else {
         if (!ref) {
           if (p.type === undefined) {
