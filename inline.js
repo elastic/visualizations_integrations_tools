@@ -69,6 +69,7 @@ function rehydrateAttributes(attributes) {
   const dashboards = dashboardPaths.map((d) =>
     JSON.parse(fs.readFileSync(`${dashboardPath}/${d}`, { encoding: "utf8" }))
   );
+
   const response3 = await axios.post(
     `${baseUrl}/api/saved_objects/_bulk_create?overwrite=true`,
     dashboards.map(
@@ -195,11 +196,11 @@ function rehydrateAttributes(attributes) {
         counter.map.add(ref.id);
       } else if (ref && migratedSearch.has(ref.id)) {
         const searchToInline = migratedSearch.get(ref.id);
-        p.version = searchToInline.migrationVersion.search; // TODO - check this
+        p.version = searchToInline.migrationVersion.search;
         p.type = "search";
-        p.title = searchToInline.title;
-        p.description = searchToInline.description;
         p.embeddableConfig.attributes = {
+          title: searchToInline.attributes.title,
+          description: searchToInline.attributes.description,
           sort: searchToInline.attributes.sort,
           columns: searchToInline.attributes.columns,
           kibanaSavedObjectMeta:
@@ -218,6 +219,7 @@ function rehydrateAttributes(attributes) {
         console.log(
           `Inlined a search, pushed ${searchToInline.references.length} inner references`
         );
+        counter.search.add(ref.id);
       } else {
         if (!ref) {
           if (p.type === undefined) {
@@ -238,9 +240,10 @@ function rehydrateAttributes(attributes) {
   console.log(`Inlined ${counter.visualization.size} visualizations`);
   console.log(`Inlined ${counter.map.size} maps`);
   console.log(`Inlined ${counter.lens.size} lenses`);
+  console.log(`Inlined ${counter.search.size} searches`);
   if (counter.visualization.size !== migratedVisualizations.size) {
     console.log(
-      `Some visualizations did not get inlined! ${counter.visualization.size}/${migratedVisualizations.size}`
+      `Some legacy visualizations did not get inlined! ${counter.visualization.size}/${migratedVisualizations.size}`
     );
     [...migratedVisualizations.values()].map((v) => {
       if (!counter.visualization.has(v.id)) {
@@ -264,6 +267,14 @@ function rehydrateAttributes(attributes) {
       }
     });
   }
+  if (counter.search.size !== migratedSearch.size) {
+    console.log("Some searches did not get inlined!");
+    [...migratedSearch.values()].map((v) => {
+      if (!counter.search.has(v.id)) {
+        console.log(`Did not inline ${v.id} anywhere`);
+      }
+    });
+  }
   if (fs.existsSync(`${folderPath}/visualization`)) {
     console.log("Removing visualization folder");
     fs.rmSync(`${folderPath}/visualization`, { force: true, recursive: true });
@@ -275,6 +286,10 @@ function rehydrateAttributes(attributes) {
   if (fs.existsSync(`${folderPath}/lens`)) {
     console.log("Removing lens folder");
     fs.rmSync(`${folderPath}/lens`, { force: true, recursive: true });
+  }
+  if (fs.existsSync(`${folderPath}/search`)) {
+    console.log("Removing search folder");
+    fs.rmSync(`${folderPath}/search`, { force: true, recursive: true });
   }
   console.log("Writing back dashboards");
   inlinedDashboards.forEach((d) => {
