@@ -33,6 +33,7 @@ Important notes:
 
 - Run `KIBANA="<kibana connection string>" node inline.js <path to kibana folder>` (e.g. `./integrations/packages/system/kibana/`)
   - The kibana connection string has to include the password (for instances with security enabled) and the base path (for instances with configured base path), for example `KIBANA="http://elastic:changeme@localhost:5901/mgp"`
+  - You may need to run `export NODE_TLS_REJECT_UNAUTHORIZED=0` if you are connecting to Kibana over TLS (https)
 - Review changes in submodule repo
   - This review should include loading the dashboard into an instance with data to make sure everything is displayed properly
 - If everything works fine, create PR
