@@ -32,7 +32,7 @@ Important notes:
 - For old dashboards (prior to 7.10), some "agg based" visualizations might break if a target version of 7.17 or 8.0 is used. In these cases, please use at least a stack version of 8.1
 
 - Run `KIBANA="<kibana connection string>" node inline.js <path to kibana folder>` (e.g. `./integrations/packages/system/kibana/`)
-  - The kibana connection string has to include the password (for instances with security enabled) and the base path (for instances with configured base path), for example `KIBANA="http://elastic:changeme@localhost:5901/mgp"`
+  - The kibana connection string has to include the password (for instances with security enabled) and the base path (for instances with configured base path), for example `KIBANA="http://elastic:changeme@localhost:5601/mgp"`
   - You may need to run `export NODE_TLS_REJECT_UNAUTHORIZED=0` if you are connecting to Kibana over TLS (https)
 - Review changes in submodule repo
   - This review should include loading the dashboard into an instance with data to make sure everything is displayed properly
