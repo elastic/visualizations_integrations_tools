@@ -14,7 +14,7 @@ This package currently has several functionalities:
 
 ## Legacy vis analyzer usage
 
-- [Install go](https://go.dev/doc/install)
+- [Install Go](https://go.dev/doc/install)
 - Run `ELASTICSEARCH_URL="<elasticsearch connection string>" go run index.go`
 - Import `dataview.ndjson` to have a bunch of runtime fields analyzing the structure
 
