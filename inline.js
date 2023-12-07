@@ -199,12 +199,7 @@ function rehydrateAttributes(attributes) {
         p.version = searchToInline.migrationVersion.search;
         p.type = "search";
         p.embeddableConfig.attributes = {
-          title: searchToInline.attributes.title,
-          description: searchToInline.attributes.description,
-          sort: searchToInline.attributes.sort,
-          columns: searchToInline.attributes.columns,
-          kibanaSavedObjectMeta:
-            searchToInline.attributes.kibanaSavedObjectMeta,
+          ...searchToInline.attributes,
           references: searchToInline.references,
         };
         delete p.panelRefName;
