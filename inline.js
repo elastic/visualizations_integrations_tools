@@ -60,6 +60,7 @@ function rehydrateAttributes(attributes) {
   const migratedVisualizations = await migrateSavedObjects("visualization");
   const migratedLens = await migrateSavedObjects("lens");
   const migratedMap = await migrateSavedObjects("map");
+  const migratedSearch = await migrateSavedObjects("search");
 
   const dashboardPath = `${folderPath}/dashboard`;
   const dExists = fs.existsSync(dashboardPath);
@@ -68,6 +69,7 @@ function rehydrateAttributes(attributes) {
   const dashboards = dashboardPaths.map((d) =>
     JSON.parse(fs.readFileSync(`${dashboardPath}/${d}`, { encoding: "utf8" }))
   );
+
   const response3 = await axios.post(
     `${baseUrl}/api/saved_objects/_bulk_create?overwrite=true`,
     dashboards.map(
@@ -97,7 +99,12 @@ function rehydrateAttributes(attributes) {
       },
     }
   );
-  let counter = { visualization: new Set(), lens: new Set(), map: new Set() };
+  let counter = {
+    visualization: new Set(),
+    lens: new Set(),
+    map: new Set(),
+    search: new Set(),
+  };
   const inlinedDashboards = response4.data.saved_objects.map((d) => {
     console.log(`Processing dashboard ${d.attributes.title}`);
     const attributes = d.attributes;
@@ -112,7 +119,7 @@ function rehydrateAttributes(attributes) {
         const visToInline = migratedVisualizations.get(ref.id);
         const visState = JSON.parse(visToInline.attributes.visState);
         p.version = visToInline.migrationVersion.visualization;
-        p.type = 'visualization';
+        p.type = "visualization";
         p.embeddableConfig.savedVis = {
           title: visToInline.attributes.title,
           description: visToInline.attributes.description,
@@ -145,8 +152,11 @@ function rehydrateAttributes(attributes) {
       } else if (ref && migratedLens.has(ref.id)) {
         const visToInline = migratedLens.get(ref.id);
         p.version = visToInline.migrationVersion.lens;
-        p.type = 'lens';
-        p.embeddableConfig.attributes = {...visToInline.attributes, references: visToInline.references };
+        p.type = "lens";
+        p.embeddableConfig.attributes = {
+          ...visToInline.attributes,
+          references: visToInline.references,
+        };
         delete p.panelRefName;
         references.splice(references.indexOf(ref), 1);
         references.push(
@@ -163,7 +173,7 @@ function rehydrateAttributes(attributes) {
       } else if (ref && migratedMap.has(ref.id)) {
         const visToInline = migratedMap.get(ref.id);
         p.version = visToInline.migrationVersion.map;
-        p.type = 'map';
+        p.type = "map";
         p.embeddableConfig.attributes = {
           title: visToInline.attributes.title,
           description: visToInline.attributes.description,
@@ -184,6 +194,27 @@ function rehydrateAttributes(attributes) {
           `Inlined a map, pushed ${visToInline.references.length} inner references`
         );
         counter.map.add(ref.id);
+      } else if (ref && migratedSearch.has(ref.id)) {
+        const searchToInline = migratedSearch.get(ref.id);
+        p.version = searchToInline.migrationVersion.search;
+        p.type = "search";
+        p.embeddableConfig.attributes = {
+          ...searchToInline.attributes,
+          references: searchToInline.references,
+        };
+        delete p.panelRefName;
+        references.splice(references.indexOf(ref), 1);
+        references.push(
+          ...searchToInline.references.map((r) => ({
+            type: r.type,
+            name: `${p.panelIndex}:${r.name}`,
+            id: r.id,
+          }))
+        );
+        console.log(
+          `Inlined a search, pushed ${searchToInline.references.length} inner references`
+        );
+        counter.search.add(ref.id);
       } else {
         if (!ref) {
           if (p.type === undefined) {
@@ -204,9 +235,10 @@ function rehydrateAttributes(attributes) {
   console.log(`Inlined ${counter.visualization.size} visualizations`);
   console.log(`Inlined ${counter.map.size} maps`);
   console.log(`Inlined ${counter.lens.size} lenses`);
+  console.log(`Inlined ${counter.search.size} searches`);
   if (counter.visualization.size !== migratedVisualizations.size) {
     console.log(
-      `Some visualizations did not get inlined! ${counter.visualization.size}/${migratedVisualizations.size}`
+      `Some legacy visualizations did not get inlined! ${counter.visualization.size}/${migratedVisualizations.size}`
     );
     [...migratedVisualizations.values()].map((v) => {
       if (!counter.visualization.has(v.id)) {
@@ -230,6 +262,14 @@ function rehydrateAttributes(attributes) {
       }
     });
   }
+  if (counter.search.size !== migratedSearch.size) {
+    console.log("Some searches did not get inlined!");
+    [...migratedSearch.values()].map((v) => {
+      if (!counter.search.has(v.id)) {
+        console.log(`Did not inline ${v.id} anywhere`);
+      }
+    });
+  }
   if (fs.existsSync(`${folderPath}/visualization`)) {
     console.log("Removing visualization folder");
     fs.rmSync(`${folderPath}/visualization`, { force: true, recursive: true });
@@ -241,6 +281,10 @@ function rehydrateAttributes(attributes) {
   if (fs.existsSync(`${folderPath}/lens`)) {
     console.log("Removing lens folder");
     fs.rmSync(`${folderPath}/lens`, { force: true, recursive: true });
+  }
+  if (fs.existsSync(`${folderPath}/search`)) {
+    console.log("Removing search folder");
+    fs.rmSync(`${folderPath}/search`, { force: true, recursive: true });
   }
   console.log("Writing back dashboards");
   inlinedDashboards.forEach((d) => {
