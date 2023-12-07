@@ -2,19 +2,19 @@
 
 This package currently has several functionalities:
 
-- Analyzes the usage of legacy visualization types in beats and integrations dashboard and indexes them into an Elasticsearch instance.
-- Inlines the visualizations in a given directory as by values panels
+- Analyzes the usage of legacy visualization types in the beats and integrations dashboard and indexes them into an Elasticsearch instance.
+- Inlines the visualizations in a given directory as "by values" panels
 - Tracks the usage of @elastic/charts vs the Lens embeddable in the Kibana code base
 
 ## Prep
 
-- Have locally installed node (tested with `16.14.2`)
+- Have locally installed `node` (tested with `16.14.2`)
 - Init submodules using `git submodule update --init --recursive`
 - Install dependencies using `yarn`
 
 ## Legacy vis analyzer usage
 
-- [Install go](https://go.dev/doc/install)
+- [Install Go](https://go.dev/doc/install)
 - Run `ELASTICSEARCH_URL="<elasticsearch connection string>" go run index.go`
 - Import `dataview.ndjson` to have a bunch of runtime fields analyzing the structure
 
@@ -28,12 +28,12 @@ The inliner takes all "by reference" visualizations in a given directory, uses t
 
 Important notes:
 
-- Using the inliner script will make the dashboards incompatible with earlier versions of the stack - e.g. if it has been run with a stack version 8.2, then the new dashboard json files will only work on version 8.2 and newer
+- Using the inliner script will make the dashboards incompatible with earlier versions of the stack e.g., if it has been run with a stack version 8.2, then the new dashboard JSON files will only work on version 8.2 and above.
 - For old dashboards (prior to 7.10), some "agg based" visualizations might break if a target version of 7.17 or 8.0 is used. In these cases, please use at least a stack version of 8.1
 
 - Run `KIBANA="<kibana connection string>" node inline.js <path to kibana folder>` (e.g. `./integrations/packages/system/kibana/`)
-  - The kibana connection string has to include the password (for instances with security enabled) and the base path (for instances with configured base path), for example `KIBANA="http://elastic:changeme@localhost:5601/mgp"`
+  - The Kibana connection string has to include the password (for instances with security enabled) and the base path (for instances with configured base path), for example `KIBANA="http://elastic:changeme@localhost:5601/mgp"`
   - You may need to run `export NODE_TLS_REJECT_UNAUTHORIZED=0` if you are connecting to Kibana over TLS (https)
-- Review changes in submodule repo
+- Review changes in the submodule repo
   - This review should include loading the dashboard into an instance with data to make sure everything is displayed properly
-- If everything works fine, create PR
+- If everything works fine, create a PR
