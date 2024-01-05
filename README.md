@@ -16,7 +16,6 @@ This package currently has several functionalities:
 
 - [Install Go](https://go.dev/doc/install)
 - Run `ELASTICSEARCH_URL="<elasticsearch connection string>" go run index.go`
-- Import `dataview.ndjson` to have a bunch of runtime fields analyzing the structure
 
 ## Code analyzer usage
 

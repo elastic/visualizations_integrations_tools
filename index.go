@@ -58,6 +58,18 @@ type Visualization struct {
 	TSVBType  string                 `json:"vis_tsvb_type,omitempty"`
 	VisTitle  string                 `json:"vis_title,omitempty"`
 	IsLegacy  bool                   `json:"is_legacy"`
+	OwningGroup string						   `json:"owning_group"`
+}
+
+func getOwningGroup(manifest map[string]interface{}) string {
+  githubOwner := manifest["owner"].(map[string]interface{})["github"].(string)
+	if githubOwner == "elastic/security-external-integrations" || githubOwner == "elastic/security-asset-management" {
+		return "security"
+	} else if githubOwner == "elastic/ml-ui" {
+		return "platform"
+	} else {
+		return "observability"
+	}
 }
 
 func collectVisualizationFolder(app, path, source string, dashboards map[string]string, folderName string) []Visualization {
@@ -94,6 +106,7 @@ func collectVisualizationFolder(app, path, source string, dashboards map[string]
 			TSVBType:  desc.TSVBType(),
 			VisTitle:  desc.Title(),
 			IsLegacy:  desc.IsLegacy(),
+			OwningGroup: "security",
 			Path:      visFilePath,
 			App:       app,
 			Source:    source,
@@ -147,6 +160,7 @@ func collectDashboardFolder(app, path, source string) ([]Visualization, map[stri
 				TSVBType:  panel.TSVBType(),
 				VisTitle:  panel.Title(),
 				IsLegacy:  panel.IsLegacy(),
+				OwningGroup: "security",
 				App:       app,
 				Source:    source,
 				Dashboard: dashboard["attributes"].(map[string]interface{})["title"].(string),
@@ -201,6 +215,7 @@ func CollectIntegrationsVisualizations(integrationsPath string) []Visualization 
 
 			for _, vis := range visualizations {
 				vis.Manifest = manifest
+				vis.OwningGroup = getOwningGroup(manifest)
 				allVis = append(allVis, vis)
 			}
 		}
@@ -264,6 +279,7 @@ func uploadVisualizations(visualizations []Visualization) {
 			"vis_type": { "type": "keyword" },
 			"vis_tsvb_type": { "type": "keyword" },
 			"vis_title": { "type": "keyword" },
+			"owning_group": { "type": "keyword" },
 			"is_legacy": { "type": "boolean" },
 			"commit": {
 				"properties": {
