@@ -45,24 +45,36 @@ func getCommitData(path string) (CommitData, error) {
 }
 
 type Visualization struct {
-	Doc       map[string]interface{} `json:"doc"`
-	SoType    string                 `json:"soType"`
-	App       string                 `json:"app"`
-	Source    string                 `json:"source"`
-	Link      string                 `json:"link"`
-	Dashboard string                 `json:"dashboard"`
-	Path      string                 `json:"path"`
-	Commit    CommitData             `json:"commit"`
-	Manifest  map[string]interface{} `json:"manifest"`
-	VisType   string                 `json:"vis_type,omitempty"`
-	TSVBType  string                 `json:"vis_tsvb_type,omitempty"`
-	VisTitle  string                 `json:"vis_title,omitempty"`
-	IsLegacy  bool                   `json:"is_legacy"`
-	OwningGroup string						   `json:"owning_group"`
+	Doc         map[string]interface{} `json:"doc"`
+	SoType      string                 `json:"soType"`
+	App         string                 `json:"app"`
+	Source      string                 `json:"source"`
+	Link        string                 `json:"link"`
+	Dashboard   string                 `json:"dashboard"`
+	Path        string                 `json:"path"`
+	Commit      CommitData             `json:"commit"`
+	Manifest    map[string]interface{} `json:"manifest"`
+	GithubOwner string                 `json:"gh_owner"`
+	VisType     string                 `json:"vis_type,omitempty"`
+	TSVBType    string                 `json:"vis_tsvb_type,omitempty"`
+	VisTitle    string                 `json:"vis_title,omitempty"`
+	IsLegacy    bool                   `json:"is_legacy"`
+	OwningGroup string                 `json:"owning_group"`
 }
 
-func getOwningGroup(manifest map[string]interface{}) string {
-  githubOwner := manifest["owner"].(map[string]interface{})["github"].(string)
+func getGithubOwner(manifest map[string]interface{}) string {
+	if githubOwner, ok := manifest["owner"].(map[string]interface{})["github"].(string); ok {
+		return githubOwner
+	}
+
+	return ""
+}
+
+func getOwningGroup(githubOwner string) string {
+	if githubOwner == "" {
+		return ""
+	}
+
 	if githubOwner == "elastic/security-external-integrations" || githubOwner == "elastic/security-asset-management" {
 		return "security"
 	} else if githubOwner == "elastic/ml-ui" {
@@ -106,7 +118,6 @@ func collectVisualizationFolder(app, path, source string, dashboards map[string]
 			TSVBType:  desc.TSVBType(),
 			VisTitle:  desc.Title(),
 			IsLegacy:  desc.IsLegacy(),
-			OwningGroup: "security",
 			Path:      visFilePath,
 			App:       app,
 			Source:    source,
@@ -160,7 +171,6 @@ func collectDashboardFolder(app, path, source string) ([]Visualization, map[stri
 				TSVBType:  panel.TSVBType(),
 				VisTitle:  panel.Title(),
 				IsLegacy:  panel.IsLegacy(),
-				OwningGroup: "security",
 				App:       app,
 				Source:    source,
 				Dashboard: dashboard["attributes"].(map[string]interface{})["title"].(string),
@@ -215,7 +225,8 @@ func CollectIntegrationsVisualizations(integrationsPath string) []Visualization 
 
 			for _, vis := range visualizations {
 				vis.Manifest = manifest
-				vis.OwningGroup = getOwningGroup(manifest)
+				vis.GithubOwner = getGithubOwner(manifest)
+				vis.OwningGroup = getOwningGroup(vis.GithubOwner)
 				allVis = append(allVis, vis)
 			}
 		}
@@ -279,6 +290,7 @@ func uploadVisualizations(visualizations []Visualization) {
 			"vis_type": { "type": "keyword" },
 			"vis_tsvb_type": { "type": "keyword" },
 			"vis_title": { "type": "keyword" },
+			"gh_owner": { "type": "keyword" },
 			"owning_group": { "type": "keyword" },
 			"is_legacy": { "type": "boolean" },
 			"commit": {
