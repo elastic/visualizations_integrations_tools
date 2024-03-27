@@ -13,13 +13,14 @@ import (
 	"strings"
 
 	"context"
+	"runtime"
+	"sync/atomic"
+	"time"
+
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esutil"
 	"github.com/elastic/kbncontent"
-	"runtime"
 	"sigs.k8s.io/yaml"
-	"sync/atomic"
-	"time"
 )
 
 type CommitData struct {
@@ -234,6 +235,62 @@ func CollectIntegrationsVisualizations(integrationsPath string) []Visualization 
 	return allVis
 }
 
+func CollectIntegrationsDataStreams(integrationsPath string) []map[string]interface{} {
+	var allDataStreams []map[string]interface{}
+	packages, err := os.ReadDir(filepath.Join(integrationsPath, "packages"))
+	fmt.Printf("Collecting integrations\n")
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return allDataStreams
+	}
+	for _, packageInfo := range packages {
+		if packageInfo.IsDir() {
+			packagePath := filepath.Join(integrationsPath, "packages", packageInfo.Name())
+			buildYmlPath := filepath.Join(packagePath, "_dev", "build", "build.yml")
+			dataStreamPackagePath := filepath.Join(integrationsPath, "packages", packageInfo.Name(), "data_stream")
+			dataStreams, err := os.ReadDir(dataStreamPackagePath)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+			}
+			integrationManifestPath := filepath.Join(packagePath, "manifest.yml")
+			integrationManifest := collectManifest(integrationManifestPath)
+			buildYml := collectManifest(buildYmlPath)
+			// check whther the integration has a _dev/benchmark folder
+			benchmarkPath := filepath.Join(packagePath, "_dev", "benchmark")
+			if _, err := os.Stat(benchmarkPath); err == nil {
+				// add flag to the integration manifest
+				integrationManifest["has_benchmark"] = true
+			} else {
+				integrationManifest["has_benchmark"] = false
+			}
+			for _, dataStream := range dataStreams {
+				manifestPath := filepath.Join(dataStreamPackagePath, dataStream.Name(), "manifest.yml")
+				dataStreamManifest := collectManifest(manifestPath)
+				// enrich data stream manifest with integration manifest
+				dataStreamManifest["integration"] = integrationManifest
+				dataStreamManifest["buildYml"] = buildYml
+				// check whether the data streams has a _dev/test/pipeline folder
+				pipelinePath := filepath.Join(dataStreamPackagePath, dataStream.Name(), "_dev", "test", "pipeline")
+				if _, err := os.Stat(pipelinePath); err == nil {
+					// add flag to the data stream manifest
+					dataStreamManifest["has_pipeline_test"] = true
+				} else {
+					dataStreamManifest["has_pipeline_test"] = false
+				}
+				// same for system test
+				systemTestPath := filepath.Join(dataStreamPackagePath, dataStream.Name(), "_dev", "test", "system")
+				if _, err := os.Stat(systemTestPath); err == nil {
+					dataStreamManifest["has_system_test"] = true
+				} else {
+					dataStreamManifest["has_system_test"] = false
+				}
+				allDataStreams = append(allDataStreams, dataStreamManifest)
+			}
+		}
+	}
+	return allDataStreams
+}
+
 // func collectBeats() []map[string]interface{} {
 // 	allVis := []map[string]interface{}{}
 // 	recurse := func(root string) {
@@ -413,8 +470,162 @@ func saveVisualizationsToFile(visualizations []Visualization) {
 	fmt.Printf("JSON data saved to %s\n", filePath)
 }
 
+func saveDataStreamsToFile(datastreams []map[string]interface{}) {
+	// Marshal the data into a JSON string
+	jsonData, err := json.Marshal(datastreams)
+	if err != nil {
+		fmt.Println("Error marshaling JSON:", err)
+		return
+	}
+
+	// Define the file path
+	filePath := "result_data_stream.json"
+
+	// Create or open the file for writing
+	file, err := os.Create(filePath)
+	if err != nil {
+		fmt.Println("Error creating file:", err)
+		return
+	}
+	defer file.Close()
+
+	// Write the JSON data to the file
+	_, err = file.Write(jsonData)
+	if err != nil {
+		fmt.Println("Error writing JSON to file:", err)
+		return
+	}
+
+	fmt.Printf("JSON data saved to %s\n", filePath)
+}
+
+func uploadDatastreams(datastreams []map[string]interface{}) {
+	indexName := "integration_data_stream"
+
+	es, err := elasticsearch.NewClient(elasticsearch.Config{})
+
+	if err != nil {
+		fmt.Printf("problem generating elasticsearch client")
+	}
+
+	log.Println(es.Info())
+
+	_, err = es.Indices.Delete([]string{indexName}, es.Indices.Delete.WithIgnoreUnavailable(true))
+
+	if err != nil {
+		fmt.Printf("Problem deleting old index %v", err)
+	}
+
+	mapping := `{
+	    "mappings": {
+			"dynamic_templates": [
+				{
+				  "default_as_keyword": {
+					"match_mapping_type": "*",
+					"path_match": "*default",
+					"runtime": {
+					  "type": "keyword"
+					}
+				  }
+				},
+				{
+				  "dynamic_as_keyword": {
+					"match_mapping_type": "*",
+					"path_match": "*mappings.dynamic",
+					"runtime": {
+					  "type": "keyword"
+					}
+				  }
+				}
+			]
+		}
+	}`
+
+	_, err = es.Indices.Create(indexName, es.Indices.Create.WithBody(strings.NewReader(mapping)))
+
+	if err != nil {
+		fmt.Printf("Problem creating index: %v\n", err)
+	}
+
+	bi, err := esutil.NewBulkIndexer(esutil.BulkIndexerConfig{
+		Index:         indexName,
+		Client:        es,
+		NumWorkers:    runtime.NumCPU(),
+		FlushBytes:    5e+6,
+		FlushInterval: 30 * time.Second, // The periodic flush interval
+	})
+
+	if err != nil {
+		log.Fatalf("Error creating the indexer: %s", err)
+	}
+
+	var countSuccessful uint64
+
+	for i, vis := range datastreams {
+		// Prepare the data payload: encode vis to JSON
+
+		data, err := json.Marshal(vis)
+		if err != nil {
+			log.Fatalf("Cannot encode datastream %d: %s", i, err)
+		}
+
+		// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+		//
+		// Add an item to the BulkIndexer
+		//
+		err = bi.Add(
+			context.Background(),
+			esutil.BulkIndexerItem{
+				// Action field configures the operation to perform (index, create, delete, update)
+				Action: "index",
+
+				// DocumentID is the (optional) document ID
+				// DocumentID: strconv.Itoa(a.ID),
+
+				// Body is an `io.Reader` with the payload
+				Body: bytes.NewReader(data),
+
+				// OnSuccess is called for each successful operation
+				OnSuccess: func(ctx context.Context, item esutil.BulkIndexerItem, res esutil.BulkIndexerResponseItem) {
+					atomic.AddUint64(&countSuccessful, 1)
+				},
+
+				// OnFailure is called for each failed operation
+				OnFailure: func(ctx context.Context, item esutil.BulkIndexerItem, res esutil.BulkIndexerResponseItem, err error) {
+					if err != nil {
+						log.Printf("ERROR: %s", err)
+					} else {
+						log.Printf("ERROR: %s: %s", res.Error.Type, res.Error.Reason)
+					}
+				},
+			},
+		)
+
+		if err != nil {
+			log.Fatalf("Unexpected error: %s", err)
+		}
+	}
+
+	// Close the indexer
+	if err := bi.Close(context.Background()); err != nil {
+		log.Fatalf("Unexpected error: %s", err)
+	}
+
+	biStats := bi.Stats()
+
+	log.Printf("%v", biStats)
+
+	// beatsData := collectBeats()
+	// for _, vis := range beatsData {
+	// 	fmt.Printf("%v\n", vis)
+	// }
+}
+
 func main() {
 	visualizations := CollectIntegrationsVisualizations("./integrations")
 	saveVisualizationsToFile(visualizations)
 	uploadVisualizations(visualizations)
+	dataStreams := CollectIntegrationsDataStreams("./integrations")
+	saveDataStreamsToFile(dataStreams)
+	uploadDatastreams(dataStreams)
 }
