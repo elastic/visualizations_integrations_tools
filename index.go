@@ -246,6 +246,7 @@ func CollectIntegrationsDataStreams(integrationsPath string) []map[string]interf
 	for _, packageInfo := range packages {
 		if packageInfo.IsDir() {
 			packagePath := filepath.Join(integrationsPath, "packages", packageInfo.Name())
+			buildYmlPath := filepath.Join(packagePath, "_dev", "build", "build.yml")
 			dataStreamPackagePath := filepath.Join(integrationsPath, "packages", packageInfo.Name(), "data_stream")
 			dataStreams, err := os.ReadDir(dataStreamPackagePath)
 			if err != nil {
@@ -253,6 +254,7 @@ func CollectIntegrationsDataStreams(integrationsPath string) []map[string]interf
 			}
 			integrationManifestPath := filepath.Join(packagePath, "manifest.yml")
 			integrationManifest := collectManifest(integrationManifestPath)
+			buildYml := collectManifest(buildYmlPath)
 			// check whther the integration has a _dev/benchmark folder
 			benchmarkPath := filepath.Join(packagePath, "_dev", "benchmark")
 			if _, err := os.Stat(benchmarkPath); err == nil {
@@ -266,6 +268,7 @@ func CollectIntegrationsDataStreams(integrationsPath string) []map[string]interf
 				dataStreamManifest := collectManifest(manifestPath)
 				// enrich data stream manifest with integration manifest
 				dataStreamManifest["integration"] = integrationManifest
+				dataStreamManifest["buildYml"] = buildYml
 				// check whether the data streams has a _dev/test/pipeline folder
 				pipelinePath := filepath.Join(dataStreamPackagePath, dataStream.Name(), "_dev", "test", "pipeline")
 				if _, err := os.Stat(pipelinePath); err == nil {
@@ -520,6 +523,15 @@ func uploadDatastreams(datastreams []map[string]interface{}) {
 				  "default_as_keyword": {
 					"match_mapping_type": "*",
 					"path_match": "*default",
+					"runtime": {
+					  "type": "keyword"
+					}
+				  }
+				},
+				{
+				  "dynamic_as_keyword": {
+					"match_mapping_type": "*",
+					"path_match": "*mappings.dynamic",
 					"runtime": {
 					  "type": "keyword"
 					}
