@@ -312,7 +312,10 @@ async function migrateSavedObjects(subFolder) {
     JSON.parse(fs.readFileSync(`${visPath}/${vis}`, { encoding: "utf8" }))
   );
 
-  const response = await axios.post(
+  let response;
+
+  try {
+   response = await axios.post(
     `${baseUrl}/api/saved_objects/_bulk_create?overwrite=true`,
     visualizations.map(
       ({ type, id, attributes, references, migrationVersion }) => ({
@@ -330,6 +333,15 @@ async function migrateSavedObjects(subFolder) {
       },
     }
   );
+  } catch (e){
+    // Some machines are converting localhost to IPv6 address that doesn't work with axios
+    // so providing some helpful message here to help debug the issue
+    // on the first axios call
+    if(/ECONNREFUSED ::1/.test(e.message)){
+      console.log('Either Kibana is not running or try to use a IPv4 address (i.e. 127.0.0.1)');
+    }
+    throw Error(e)
+  }
   if (response.data.saved_objects.some((s) => s.error)) {
     throw new Error(`error loading ${subFolder}`);
   }
