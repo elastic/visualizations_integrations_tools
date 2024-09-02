@@ -6,8 +6,8 @@
   "private": true,
   "dependencies": {
     "@elastic/elasticsearch": "^8.1.0",
-    "axios": "1",
-    "glob": "8.1",
+    "axios": "^1.0.0",
+    "glob": "8.1.0",
     "lodash": "^4.17.21",
     "yaml": "2.5.0"
   }
