@@ -145,7 +145,7 @@ function collectUsages() {
 
   const chunkSize = 250;
   for (let i = 0; i < usages.length; i += chunkSize) {
-    console.log(i);
+    console.log(`uploading #${i+1} out of ${Math.ceil(usages.length / chunkSize)}`);
     const chunk = usages.slice(i, i + chunkSize);
     const response = await client.bulk({
       operations: chunk.flatMap((v) => [
