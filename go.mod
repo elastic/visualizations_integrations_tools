@@ -12,7 +12,7 @@ require (
 
 require (
 	github.com/elastic/go-elasticsearch/v8 v8.10.0
-	github.com/elastic/kbncontent v0.1.1
+	github.com/elastic/kbncontent v0.1.4
 	sigs.k8s.io/yaml v1.3.0
 )
 
