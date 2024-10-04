@@ -4,8 +4,6 @@ go 1.21
 
 toolchain go1.23.2
 
-require gopkg.in/yaml.v2 v2.4.0 // indirect
-
 require (
 	github.com/elastic/elastic-transport-go/v8 v8.6.0 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
@@ -20,7 +18,7 @@ require (
 require (
 	github.com/elastic/go-elasticsearch/v8 v8.15.0
 	github.com/elastic/kbncontent v0.1.4
-	sigs.k8s.io/yaml v1.3.0
+	sigs.k8s.io/yaml v1.4.0
 )
 
 replace github.com/elastic/kbncontent v0.0.0 => ../kbncontent
