@@ -2,7 +2,7 @@ module github.com/elastic/visualizations_integrations_tools
 
 go 1.22
 
-toolchain go1.23.3
+toolchain go1.23.4
 
 require (
 	github.com/elastic/elastic-transport-go/v8 v8.6.0 // indirect
