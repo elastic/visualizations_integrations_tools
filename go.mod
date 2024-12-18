@@ -16,7 +16,7 @@ require (
 )
 
 require (
-	github.com/elastic/go-elasticsearch/v8 v8.16.0
+	github.com/elastic/go-elasticsearch/v8 v8.17.0
 	github.com/elastic/kbncontent v0.1.4
 	sigs.k8s.io/yaml v1.4.0
 )
