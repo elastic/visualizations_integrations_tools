@@ -5,7 +5,7 @@ go 1.22
 toolchain go1.23.4
 
 require (
-	github.com/elastic/elastic-transport-go/v8 v8.6.0 // indirect
+	github.com/elastic/elastic-transport-go/v8 v8.7.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
@@ -16,7 +16,7 @@ require (
 )
 
 require (
-	github.com/elastic/go-elasticsearch/v8 v8.16.0
+	github.com/elastic/go-elasticsearch/v8 v8.18.0
 	github.com/elastic/kbncontent v0.1.4
 	sigs.k8s.io/yaml v1.4.0
 )
